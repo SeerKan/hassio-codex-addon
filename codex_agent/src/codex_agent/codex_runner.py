@@ -18,6 +18,7 @@ from .snapshot import collect_snapshot, diff_snapshots
 
 USERS_DIR = DATA_DIR / "users"
 WORKSPACE = Path("/homeassistant")
+MANAGED_CODEX_CONFIG = 'cli_auth_credentials_store = "file"\n'
 
 
 class CodexRunner:
@@ -33,13 +34,8 @@ class CodexRunner:
         home = self.codex_home_for(user)
         home.mkdir(parents=True, exist_ok=True)
         config = home / "config.toml"
-        if not config.exists():
-            config.write_text(
-                'cli_auth_credentials_store = "file"\n'
-                'approval_policy = "on-request"\n'
-                'sandbox_mode = "workspace-write"\n',
-                encoding="utf-8",
-            )
+        if not config.exists() or config.read_text(encoding="utf-8") != MANAGED_CODEX_CONFIG:
+            config.write_text(MANAGED_CODEX_CONFIG, encoding="utf-8")
             config.chmod(0o600)
         return home
 
@@ -50,17 +46,20 @@ class CodexRunner:
         if auth_file.exists():
             try:
                 raw = json.loads(auth_file.read_text(encoding="utf-8"))
+                self._validate_auth_json(raw)
                 status["auth_mode"] = raw.get("auth_mode", "unknown")
                 status["last_refresh"] = raw.get("last_refresh")
             except json.JSONDecodeError:
                 status["configured"] = False
                 status["error"] = "auth.json is not valid JSON"
+            except ValueError as exc:
+                status["configured"] = False
+                status["error"] = str(exc)
         return status
 
     def import_auth_json(self, user: UserContext, content: str) -> dict[str, Any]:
         parsed = json.loads(content)
-        if not isinstance(parsed, dict) or "auth_mode" not in parsed:
-            raise ValueError("auth.json must be a JSON object with an auth_mode field.")
+        self._validate_auth_json(parsed)
         home = self.ensure_user_home(user)
         auth_file = home / "auth.json"
         auth_file.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
@@ -273,16 +272,16 @@ class CodexRunner:
         if self.settings.codex_model:
             command.extend(["--model", self.settings.codex_model])
         if self.settings.enable_live_search:
-            command.append("--search")
+            command.extend(["--config", 'web_search="live"'])
 
         if yolo:
             command.append("--dangerously-bypass-approvals-and-sandbox")
             return command
 
         if mode in {"ask", "propose"}:
-            command.extend(["--sandbox", "read-only", "--ask-for-approval", "never"])
+            command.extend(["--sandbox", "read-only"])
         else:
-            command.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            command.extend(["--sandbox", "workspace-write"])
         return command
 
     def _build_prompt(
@@ -349,6 +348,46 @@ User request:
         env["HOME"] = str(home)
         env.setdefault("NO_COLOR", "1")
         return env
+
+    @staticmethod
+    def _validate_auth_json(parsed: Any) -> None:
+        if not isinstance(parsed, dict):
+            raise ValueError("auth.json must be a JSON object.")
+
+        auth_mode = parsed.get("auth_mode")
+        if not isinstance(auth_mode, str) or not auth_mode:
+            raise ValueError("auth.json must include a non-empty auth_mode field.")
+
+        api_key = parsed.get("OPENAI_API_KEY")
+        if isinstance(api_key, str) and api_key:
+            return
+
+        if auth_mode != "chatgpt":
+            raise ValueError("auth.json must contain ChatGPT tokens or a non-empty OPENAI_API_KEY.")
+
+        last_refresh = parsed.get("last_refresh")
+        if not isinstance(last_refresh, str):
+            raise ValueError("auth.json must include a last_refresh timestamp.")
+        try:
+            parsed_refresh = datetime.fromisoformat(last_refresh.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("auth.json last_refresh must be an RFC3339 timestamp.") from exc
+        if "T" not in last_refresh or parsed_refresh.tzinfo is None:
+            raise ValueError("auth.json last_refresh must be an RFC3339 timestamp.")
+
+        tokens = parsed.get("tokens")
+        if not isinstance(tokens, dict):
+            raise ValueError("auth.json must include a tokens object.")
+
+        required_tokens = ("access_token", "account_id", "id_token", "refresh_token")
+        missing = [
+            name
+            for name in required_tokens
+            if not isinstance(tokens.get(name), str) or not tokens.get(name)
+        ]
+        if missing:
+            fields = ", ".join(missing)
+            raise ValueError(f"auth.json tokens must include non-empty fields: {fields}.")
 
     @staticmethod
     def _redacted_command(command: list[str]) -> list[str]:

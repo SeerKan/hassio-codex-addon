@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- Repair managed Codex config for existing users and remove unsupported CLI keys.
+
+## 0.1.3
+
+- Use Codex CLI flags supported by `codex exec`.
+
 ## 0.1.2
 
 - Fix container startup path so the web app module is importable at runtime.
