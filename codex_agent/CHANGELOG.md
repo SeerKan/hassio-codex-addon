@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Fix container startup path so the web app module is importable at runtime.
+
 ## 0.1.1
 
 - Use standard buffered ingress responses for the sidebar UI.

@@ -1,5 +1,5 @@
 name: Codex Agent
-version: "0.1.1"
+version: "0.1.2"
 slug: codex_agent
 description: Ask Codex to inspect, propose, and apply Home Assistant changes.
 url: https://github.com/SeerKan/hassio-codex-addon/tree/main/codex_agent
