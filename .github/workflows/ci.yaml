@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r codex_agent/requirements.txt -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Validate add-on metadata
+        run: python scripts/validate_addon.py
+      - name: Test
+        run: pytest

@@ -1,0 +1,66 @@
+name: Codex Agent
+version: "0.1.0"
+slug: codex_agent
+description: Ask Codex to inspect, propose, and apply Home Assistant changes.
+url: https://github.com/SeerKan/hassio-codex-addon/tree/main/codex_agent
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+stage: experimental
+image: ghcr.io/seerkan/hassio-codex-addon
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:robot-outline
+panel_title: Codex
+panel_admin: true
+homeassistant: "2026.1.0"
+homeassistant_api: true
+hassio_api: true
+hassio_role: admin
+auth_api: true
+apparmor: true
+watchdog: http://[HOST]:[PORT:8099]/health
+map:
+  - type: homeassistant_config
+    read_only: false
+    path: /homeassistant
+  - type: addon_config
+    read_only: false
+    path: /config
+  - type: all_addon_configs
+    read_only: false
+    path: /addon_configs
+  - type: addons
+    read_only: false
+    path: /addons
+  - type: share
+    read_only: false
+    path: /share
+  - type: media
+    read_only: false
+    path: /media
+  - type: ssl
+    read_only: false
+    path: /ssl
+options:
+  retention_days: 30
+  enable_live_search: true
+  allow_yolo_mode: true
+  create_backup_before_first_change: true
+  require_approval_for_secrets: true
+  codex_model: ""
+  max_snapshot_file_kb: 512
+  log_level: info
+schema:
+  retention_days: "int(1,365)"
+  enable_live_search: bool
+  allow_yolo_mode: bool
+  create_backup_before_first_change: bool
+  require_approval_for_secrets: bool
+  codex_model: "str?"
+  max_snapshot_file_kb: "int(16,4096)"
+  log_level: "list(debug|info|warning|error)"

@@ -1,0 +1,25 @@
+configuration:
+  retention_days:
+    name: Audit retention
+    description: Number of days to keep prompts, run metadata, events, and diffs.
+  enable_live_search:
+    name: Live web search
+    description: Allow Codex to use live web search for current official documentation.
+  allow_yolo_mode:
+    name: Allow full-auto mode
+    description: Enables the UI option that runs Codex without approval prompts or sandboxing.
+  create_backup_before_first_change:
+    name: First-change backup
+    description: Create a full Supervisor backup before the first apply-mode change.
+  require_approval_for_secrets:
+    name: Secret approval gate
+    description: Require explicit user approval before prompts can access Home Assistant secret files.
+  codex_model:
+    name: Codex model
+    description: Optional model override. Leave empty to use the signed-in user's Codex default.
+  max_snapshot_file_kb:
+    name: Snapshot file limit
+    description: Maximum text file size included in pre/post-run diff snapshots.
+  log_level:
+    name: Log level
+    description: Add-on application log level.

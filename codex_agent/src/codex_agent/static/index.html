@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Agent</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Home Assistant</p>
+          <h1>Codex Agent</h1>
+        </div>
+        <div class="status-strip">
+          <span id="haVersion">HA unavailable</span>
+          <span id="authState">Checking auth</span>
+          <span id="userName">Unknown user</span>
+        </div>
+      </header>
+
+      <section id="authPanel" class="panel auth-panel" hidden>
+        <div>
+          <p class="eyebrow">Codex login</p>
+          <h2>Connect your Codex account</h2>
+        </div>
+        <div class="auth-actions">
+          <button id="startLogin" class="primary">Start device login</button>
+          <button id="showImport" class="secondary">Import auth.json</button>
+        </div>
+        <pre id="loginOutput" class="terminal" hidden></pre>
+        <div id="importBox" class="import-box" hidden>
+          <textarea id="authJson" spellcheck="false" placeholder='Paste auth.json here'></textarea>
+          <button id="importAuth" class="primary">Import</button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel controls">
+          <p class="eyebrow">Mode</p>
+          <div class="segmented" role="radiogroup" aria-label="Run mode">
+            <button class="mode active" data-mode="ask">Ask</button>
+            <button class="mode" data-mode="propose">Propose</button>
+            <button class="mode" data-mode="apply">Apply</button>
+          </div>
+
+          <label class="check-row">
+            <input id="secretApproved" type="checkbox" />
+            <span>Allow secret access for this run</span>
+          </label>
+
+          <label class="check-row danger">
+            <input id="yolo" type="checkbox" />
+            <span>Full-auto for this run</span>
+          </label>
+
+          <div class="meta-grid">
+            <div>
+              <span>Retention</span>
+              <strong id="retentionDays">30 days</strong>
+            </div>
+            <div>
+              <span>Live docs</span>
+              <strong id="liveSearch">On</strong>
+            </div>
+          </div>
+        </aside>
+
+        <section class="panel conversation">
+          <div id="approvalBox" class="approval" hidden>
+            <strong>Approval required</strong>
+            <p id="approvalText"></p>
+            <button id="approveRun" class="danger-button">Approve and run</button>
+          </div>
+
+          <div id="runOutput" class="run-output">
+            <div class="empty-state">
+              <h2>Ask for a change, inspection, or plan.</h2>
+              <p>Codex will receive current Home Assistant context and the selected safety mode.</p>
+            </div>
+          </div>
+
+          <form id="composer" class="composer">
+            <textarea
+              id="prompt"
+              rows="5"
+              placeholder="Ask Codex to inspect, propose, or change Home Assistant..."
+            ></textarea>
+            <button id="runButton" class="primary" type="submit">Run Codex</button>
+          </form>
+        </section>
+      </section>
+
+      <section class="panel history">
+        <div class="history-header">
+          <p class="eyebrow">Recent runs</p>
+          <button id="refreshRuns" class="secondary">Refresh</button>
+        </div>
+        <div id="runsList" class="runs-list"></div>
+      </section>
+    </main>
+
+    <script src="static/app.js" type="module"></script>
+  </body>
+</html>
