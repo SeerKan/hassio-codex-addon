@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -18,7 +19,27 @@ from .snapshot import collect_snapshot, diff_snapshots
 
 USERS_DIR = DATA_DIR / "users"
 WORKSPACE = Path("/homeassistant")
+MAPPED_PATHS = (
+    Path("/homeassistant"),
+    Path("/config"),
+    Path("/addon_configs"),
+    Path("/addons"),
+    Path("/share"),
+    Path("/media"),
+    Path("/ssl"),
+)
+LOCAL_CONTEXT_FILES = (
+    Path("/homeassistant/.storage/lovelace"),
+    Path("/homeassistant/.storage/lovelace_dashboards"),
+    Path("/homeassistant/ui-lovelace.yaml"),
+)
 MANAGED_CODEX_CONFIG = 'cli_auth_credentials_store = "file"\n'
+ANSI_ESCAPE_RE = re.compile(
+    r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))"
+)
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+DEVICE_URL_RE = re.compile(r"https://[^\s]+")
+DEVICE_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b")
 
 
 class CodexRunner:
@@ -95,12 +116,21 @@ class CodexRunner:
             )
             assert proc.stdout is not None
             for line in proc.stdout:
-                self.db.append_auth_output(job_id, line)
+                self.db.append_auth_output(job_id, clean_terminal_text(line))
             exit_code = proc.wait()
             self.db.finish_auth_job(job_id, "completed" if exit_code == 0 else "failed", exit_code)
         except Exception as exc:
             self.db.append_auth_output(job_id, f"\nLogin process failed: {exc}\n")
             self.db.finish_auth_job(job_id, "failed", None)
+
+    def auth_job_view(self, job: dict[str, Any]) -> dict[str, Any]:
+        output = clean_terminal_text(job.get("output", ""))
+        return {
+            **job,
+            "output": output,
+            "login_url": self._first_match(DEVICE_URL_RE, output),
+            "device_code": self._first_match(DEVICE_CODE_RE, output),
+        }
 
     async def start_run(
         self,
@@ -142,6 +172,7 @@ class CodexRunner:
             self.db.update_run(run_id, backup_slug=backup_slug, backup_job_id=backup_job_id)
 
         ha_context = await self.ha.context()
+        ha_context["local"] = self._local_context()
         thread = threading.Thread(
             target=self._run_codex_process,
             args=(
@@ -191,7 +222,8 @@ class CodexRunner:
         if mode == "apply":
             before = collect_snapshot(max_file_kb=self.settings.max_snapshot_file_kb)
 
-        command = self._build_command(mode=mode, yolo=yolo)
+        workspace = self._workspace_root()
+        command = self._build_command(mode=mode, yolo=yolo, workspace=workspace)
         full_prompt = self._build_prompt(
             user=user,
             prompt=prompt,
@@ -207,7 +239,7 @@ class CodexRunner:
         try:
             proc = subprocess.Popen(
                 command,
-                cwd=str(WORKSPACE if WORKSPACE.exists() else Path("/")),
+                cwd=str(workspace),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -231,10 +263,9 @@ class CodexRunner:
                 try:
                     event = json.loads(line)
                     self.db.add_event(run_id, event.get("type", "codex.event"), event)
-                    if event.get("type") == "item.completed":
-                        item = event.get("item") or {}
-                        if item.get("type") == "agent_message":
-                            final_message = item.get("text") or final_message
+                    message = self._extract_agent_message(event)
+                    if message:
+                        final_message = message
                 except json.JSONDecodeError:
                     self.db.add_event(run_id, "codex.stdout", line)
 
@@ -263,16 +294,21 @@ class CodexRunner:
 
     def _read_stderr(self, run_id: str, stream: Any) -> None:
         for line in stream:
-            line = line.rstrip("\n")
+            line = clean_terminal_text(line.rstrip("\n"))
             if line:
                 self.db.add_event(run_id, "codex.stderr", line)
 
-    def _build_command(self, *, mode: str, yolo: bool) -> list[str]:
+    def _build_command(self, *, mode: str, yolo: bool, workspace: Path | None = None) -> list[str]:
         command = ["codex", "exec", "--json", "--skip-git-repo-check"]
         if self.settings.codex_model:
             command.extend(["--model", self.settings.codex_model])
         if self.settings.enable_live_search:
             command.extend(["--config", 'web_search="live"'])
+        command.extend(["--config", 'shell_environment_policy.inherit="all"'])
+        command.extend(["--cd", str(workspace or self._workspace_root())])
+        for path in MAPPED_PATHS:
+            if path.exists() and path != (workspace or self._workspace_root()):
+                command.extend(["--add-dir", str(path)])
 
         if yolo:
             command.append("--dangerously-bypass-approvals-and-sandbox")
@@ -337,6 +373,14 @@ Operational rules:
 - Do not delete, purge, restore, disable authentication, expose Supervisor, or perform
   destructive operations unless the request explicitly says to do so and this run was approved.
 - If a requested action is unsafe or ambiguous, stop and explain the concern.
+- Before saying Home Assistant data is unavailable, inspect the mapped files and
+  call the Home Assistant API when the Supervisor token is available.
+- For dashboard questions, inspect /homeassistant/.storage/lovelace,
+  /homeassistant/.storage/lovelace_dashboards, ui-lovelace.yaml, and any included
+  dashboard YAML. Count entities from the actual dashboard configuration, not
+  only from the global entity registry.
+- If SUPERVISOR_TOKEN is missing, do not send an Authorization header with an
+  empty bearer token.
 
 User request:
 {prompt}
@@ -347,7 +391,47 @@ User request:
         env["CODEX_HOME"] = str(home)
         env["HOME"] = str(home)
         env.setdefault("NO_COLOR", "1")
+        env["CODEX_AGENT_HOME_ASSISTANT_ROOT"] = str(WORKSPACE)
+        if not env.get("SUPERVISOR_TOKEN"):
+            env.pop("SUPERVISOR_TOKEN", None)
         return env
+
+    def _workspace_root(self) -> Path:
+        return WORKSPACE if WORKSPACE.exists() else Path("/")
+
+    def _local_context(self) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "paths": {},
+            "dashboard_files": [],
+        }
+        for path in MAPPED_PATHS:
+            context["paths"][str(path)] = {
+                "exists": path.exists(),
+                "is_dir": path.is_dir(),
+                "readable": os.access(path, os.R_OK),
+                "writable": os.access(path, os.W_OK),
+            }
+
+        dashboard_candidates = list(LOCAL_CONTEXT_FILES)
+        dashboards_dir = WORKSPACE / "dashboards"
+        if dashboards_dir.exists():
+            dashboard_candidates.extend(sorted(dashboards_dir.glob("**/*.yaml"))[:12])
+
+        max_bytes = max(16, self.settings.max_snapshot_file_kb) * 1024
+        for path in dashboard_candidates:
+            item: dict[str, Any] = {"path": str(path), "exists": path.exists()}
+            if path.exists() and path.is_file():
+                try:
+                    raw = path.read_bytes()
+                    item["bytes"] = len(raw)
+                    if len(raw) <= max_bytes and b"\x00" not in raw:
+                        item["content"] = raw.decode("utf-8", errors="replace")
+                    else:
+                        item["omitted"] = "file is binary or larger than the context limit"
+                except OSError as exc:
+                    item["error"] = str(exc)
+            context["dashboard_files"].append(item)
+        return context
 
     @staticmethod
     def _validate_auth_json(parsed: Any) -> None:
@@ -395,3 +479,42 @@ User request:
             return command
         redacted = command[:-1] + ["<prompt>"]
         return redacted
+
+    @staticmethod
+    def _first_match(pattern: re.Pattern[str], value: str) -> str:
+        match = pattern.search(value)
+        return match.group(0) if match else ""
+
+    @staticmethod
+    def _extract_agent_message(event: dict[str, Any]) -> str:
+        if event.get("type") not in {"item.completed", "message.completed"}:
+            return ""
+        item = event.get("item") if isinstance(event.get("item"), dict) else event
+        item_type = item.get("type")
+        if item_type == "agent_message" and isinstance(item.get("text"), str):
+            return item["text"]
+        if item_type == "message" and item.get("role") in {None, "assistant"}:
+            return extract_text_from_content(item.get("content"))
+        return ""
+
+
+def clean_terminal_text(value: str) -> str:
+    without_ansi = ANSI_ESCAPE_RE.sub("", value)
+    without_controls = CONTROL_CHAR_RE.sub("", without_ansi)
+    return without_controls.replace("\r", "")
+
+
+def extract_text_from_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text") or item.get("content")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(part for part in parts if part)

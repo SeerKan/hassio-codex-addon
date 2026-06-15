@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Clean Codex device-login output and expose a clickable login URL.
+- Render run progress as human-readable activity instead of raw JSON.
+- Improve Home Assistant API and dashboard context available to Codex.
+
 ## 0.1.4
 
 - Repair managed Codex config for existing users and remove unsupported CLI keys.

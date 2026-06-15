@@ -38,8 +38,7 @@ HIGH_RISK_WORDS = re.compile(
 )
 
 WRITE_WORDS = re.compile(
-    r"\b(change|modify|edit|write|create|add|install|update|upgrade|reload|restart|"
-    r"automation|script|dashboard|lovelace|theme|card|integration|custom component)\b",
+    r"\b(change|modify|edit|write|create|add|install|update|upgrade|reload|restart)\b",
     re.IGNORECASE,
 )
 

@@ -29,7 +29,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.4", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.5", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -95,8 +95,9 @@ async def auth_job(job_id: str, user: UserDep) -> dict:
     job = db.get_auth_job(job_id, user.user_id)
     if not job:
         raise HTTPException(status_code=404, detail="Login job not found.")
-    job["auth"] = runner.auth_status(user)
-    return job
+    view = runner.auth_job_view(job)
+    view["auth"] = runner.auth_status(user)
+    return view
 
 
 @app.post("/api/auth/import")

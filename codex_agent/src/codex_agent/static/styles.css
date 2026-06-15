@@ -270,16 +270,88 @@ h2 {
   color: var(--text);
 }
 
-.event,
-.final,
-.diff {
-  border-bottom: 1px solid rgba(51, 64, 71, 0.7);
-  padding: 12px 0;
+.message,
+.activity {
+  margin-bottom: 10px;
 }
 
-.event code,
-.terminal,
-.diff pre {
+.message {
+  border: 1px solid rgba(51, 64, 71, 0.82);
+  border-radius: 8px;
+  background: rgba(13, 17, 19, 0.68);
+  overflow: hidden;
+}
+
+.assistant-message {
+  border-color: rgba(72, 198, 169, 0.4);
+  background: rgba(72, 198, 169, 0.08);
+}
+
+.notice {
+  border-color: rgba(245, 193, 92, 0.42);
+  background: rgba(245, 193, 92, 0.08);
+}
+
+.message-title {
+  padding: 10px 12px 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.message-body {
+  padding: 8px 12px 12px;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.activity {
+  border: 1px solid rgba(51, 64, 71, 0.72);
+  border-radius: 8px;
+  background: rgba(32, 40, 44, 0.5);
+}
+
+.activity summary {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.activity summary span:first-child {
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.activity summary span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity.no-details summary {
+  cursor: default;
+}
+
+.activity-muted {
+  opacity: 0.84;
+}
+
+.activity-tool {
+  border-color: rgba(72, 198, 169, 0.28);
+}
+
+.activity pre,
+.terminal {
   white-space: pre-wrap;
   word-break: break-word;
   font-family:
@@ -291,19 +363,14 @@ h2 {
   line-height: 1.55;
 }
 
-.event-type {
-  color: var(--accent-2);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
+.activity pre {
+  margin: 0;
+  border-top: 1px solid rgba(51, 64, 71, 0.72);
+  padding: 10px 12px;
+  color: #d8e5df;
 }
 
-.final {
-  color: var(--text);
-  line-height: 1.55;
-}
-
-.diff pre {
+.terminal {
   margin: 0;
   color: #d8e5df;
 }
@@ -373,9 +440,67 @@ textarea:focus {
   font-size: 12px;
 }
 
-.terminal {
+.login-output {
   grid-column: 1 / -1;
   width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+.login-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid rgba(72, 198, 169, 0.34);
+  border-radius: 8px;
+  background: rgba(72, 198, 169, 0.08);
+  padding: 10px;
+}
+
+.login-field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.login-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.login-field a,
+.code-button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1113;
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.login-field a:hover,
+.code-button:hover {
+  border-color: var(--accent);
+}
+
+.code-button {
+  cursor: copy;
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.terminal {
   max-height: 240px;
   overflow: auto;
   border: 1px solid var(--line);
@@ -415,5 +540,11 @@ textarea:focus {
   .composer,
   .import-box {
     grid-template-columns: 1fr;
+  }
+
+  .activity summary,
+  .login-field {
+    grid-template-columns: 1fr;
+    gap: 5px;
   }
 }

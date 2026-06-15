@@ -8,6 +8,13 @@ def test_low_risk_read_only_prompt() -> None:
     assert assessment.approval_required is False
 
 
+def test_dashboard_count_question_stays_low_risk() -> None:
+    assessment = classify_prompt("How many lights are on the main dashboard?", "ask")
+
+    assert assessment.level == "low"
+    assert assessment.approval_required is False
+
+
 def test_apply_prompt_is_medium_without_approval() -> None:
     assessment = classify_prompt("Add a dashboard card for the thermostat", "apply")
 
