@@ -1,5 +1,5 @@
 name: Codex Agent
-version: "0.1.0"
+version: "0.1.1"
 slug: codex_agent
 description: Ask Codex to inspect, propose, and apply Home Assistant changes.
 url: https://github.com/SeerKan/hassio-codex-addon/tree/main/codex_agent
@@ -13,7 +13,6 @@ stage: experimental
 image: ghcr.io/seerkan/hassio-codex-addon
 ingress: true
 ingress_port: 8099
-ingress_stream: true
 panel_icon: mdi:robot-outline
 panel_title: Codex
 panel_admin: true

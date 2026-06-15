@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Use standard buffered ingress responses for the sidebar UI.
+
 ## 0.1.0
 
 - Initial production-oriented add-on scaffold.
