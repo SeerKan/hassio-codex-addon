@@ -11,8 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .codex_runner import CodexRunner
-from .event_view import display_events
 from .database import Database
+from .event_view import display_events
 from .security import UserContext, classify_prompt, user_from_request
 from .settings import load_settings
 

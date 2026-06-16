@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import uuid
 import threading
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -100,13 +100,16 @@ class Database:
                 self._conn.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
 
             self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sessions_user_updated_at ON sessions(user_id, updated_at DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_sessions_user_updated_at ON "
+                "sessions(user_id, updated_at DESC)"
             )
             self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_runs_user_started_at ON runs(user_id, started_at DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_runs_user_started_at ON "
+                "runs(user_id, started_at DESC)"
             )
             self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_runs_session_started_at ON runs(session_id, started_at DESC)"
+                "CREATE INDEX IF NOT EXISTS idx_runs_session_started_at ON "
+                "runs(session_id, started_at DESC)"
             )
 
     def upsert_user(self, user_id: str, username: str, display_name: str, safe_id: str) -> None:

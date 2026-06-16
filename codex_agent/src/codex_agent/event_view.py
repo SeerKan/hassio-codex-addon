@@ -48,17 +48,15 @@ def display_event(event: dict[str, Any]) -> dict[str, Any]:
 
     if inner_type in {"thread.started"}:
         thread_id = _clean_text(payload.get("thread_id", ""))
-        return _compose(event, "Session opened", f"Thread {thread_id}" if thread_id else "Session opened")
+        summary = f"Thread {thread_id}" if thread_id else "Session opened"
+        return _compose(event, "Session opened", summary)
 
     if inner_type in {"turn.started"}:
         return _compose(event, "Working", "Thinking through the request")
 
     if inner_type in {"turn.completed"}:
         usage = payload.get("usage")
-        if isinstance(usage, dict):
-            summary = _usage_summary(usage)
-        else:
-            summary = "Completed"
+        summary = _usage_summary(usage) if isinstance(usage, dict) else "Completed"
         return _compose(event, "Done", summary)
 
     if inner_type in {"turn.failed", "error"}:
@@ -100,7 +98,9 @@ def _item_event(event: dict[str, Any], event_type: str, item: dict[str, Any]) ->
     item_type = _clean_text(item.get("type") or "item")
     complete = event_type == "item.completed"
 
-    if item_type == "agent_message" or (item_type == "message" and item.get("role") in {"", None, "assistant"}):
+    if item_type == "agent_message" or (
+        item_type == "message" and item.get("role") in {"", None, "assistant"}
+    ):
         message = _extract_item_text(item)
         if not message:
             message = "(empty response)"
@@ -130,9 +130,20 @@ def _item_event(event: dict[str, Any], event_type: str, item: dict[str, Any]) ->
     }:
         summary = _tool_summary(item, complete)
         details = _tool_details(item)
-        return _compose(event, "Tool finished" if complete else "Tool started", summary, kind="tool", details=details)
+        return _compose(
+            event,
+            "Tool finished" if complete else "Tool started",
+            summary,
+            kind="tool",
+            details=details,
+        )
 
-    return _compose(event, _label(item_type), _extract_item_text(item) or _human_message(item), kind="activity")
+    return _compose(
+        event,
+        _label(item_type),
+        _extract_item_text(item) or _human_message(item),
+        kind="activity",
+    )
 
 
 def _compose(
@@ -288,7 +299,7 @@ def _summarize_object(value: dict[str, Any]) -> str:
         return str(value or "")
     pieces = []
     for key, item in list(value.items())[:6]:
-        if isinstance(item, (dict, list)):
+        if isinstance(item, dict | list):
             pieces.append(f"{key}: [{type(item).__name__}]")
         else:
             text = _short_text(_clean_text(item), 120)
