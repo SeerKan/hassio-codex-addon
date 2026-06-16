@@ -41,7 +41,7 @@ function resolveSessionId(payload) {
   return payload.active_session_id;
 }
 
-function renderStatus(payload) {
+async function renderStatus(payload) {
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
     setText("authState", `Codex: ${payload.auth.auth_mode || "configured"}`);
@@ -68,10 +68,11 @@ function renderStatus(payload) {
   }
 
   if (state.activeSessionId) {
-    if (payload.runs && payload.runs.length !== undefined) {
+    const runsSessionId = payload.runs_session_id || payload.active_session_id;
+    if (runsSessionId === state.activeSessionId && Array.isArray(payload.runs)) {
       renderRuns(payload.runs);
     } else {
-      refreshSessionRuns();
+      await refreshSessionRuns();
     }
   } else {
     renderRuns([]);
@@ -94,9 +95,9 @@ function renderRuns(runs) {
     card.innerHTML = `
       <div class="run-card-body">
         <strong class="run-prompt">${escapeHtml(preview)}</strong>
-        <span>${run.mode} · ${run.risk_level} · ${run.status}</span>
+        <span class="run-meta">${run.mode} · ${run.risk_level} · ${run.status}</span>
       </div>
-      <span>${new Date(run.started_at).toLocaleString()}</span>
+      <span class="run-time">${new Date(run.started_at).toLocaleString()}</span>
     `;
     card.addEventListener("click", () => loadRun(run.id, true));
     list.appendChild(card);
@@ -605,7 +606,7 @@ function renderRun(run, events, reset = false) {
 
 async function loadStatus() {
   const payload = await api("api/status");
-  renderStatus(payload);
+  await renderStatus(payload);
 }
 
 async function refreshSessionRuns() {
@@ -639,6 +640,7 @@ async function startNewSession() {
     method: "POST",
     body: JSON.stringify({}),
   });
+  activateSession(payload.session_id);
   await loadStatus();
   activateSession(payload.session_id);
   renderRuns([]);
@@ -647,6 +649,9 @@ async function startNewSession() {
 async function loadRun(runId, reset = false) {
   const payload = await api(`api/runs/${runId}?after_event_id=${reset ? 0 : state.lastEventId}`);
   state.activeRunId = runId;
+  if (payload.run.session_id && payload.run.session_id !== state.activeSessionId) {
+    activateSession(payload.run.session_id);
+  }
   renderRun(payload.run, payload.events, reset);
   if (["queued", "running"].includes(payload.run.status)) {
     schedulePoll();
@@ -688,6 +693,10 @@ async function submitRun(approved = false) {
     });
     state.pendingApproval = null;
     state.lastEventId = 0;
+    if (payload.session_id) {
+      activateSession(payload.session_id);
+      await loadStatus();
+    }
     $("runOutput").innerHTML = "";
     await loadRun(payload.run_id, true);
   } catch (error) {

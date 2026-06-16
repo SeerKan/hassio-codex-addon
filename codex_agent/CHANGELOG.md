@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10
+
+- Fix the session selector layout so session names are visible and selectable.
+- Keep Recent runs constrained when prompts are long.
+- Keep selected sessions and Recent runs in sync after refreshes and new runs.
+
 ## 0.1.9
 
 - Add user-scoped conversation sessions so follow-up runs stay in the same context.

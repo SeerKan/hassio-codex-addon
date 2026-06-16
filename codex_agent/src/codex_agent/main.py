@@ -30,7 +30,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.9", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.10", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -98,6 +98,7 @@ async def status(user: UserDep) -> dict:
         "settings": settings.__dict__,
         "home_assistant": ha_context,
         "active_session_id": active_session_id,
+        "runs_session_id": active_session_id,
         "sessions": sessions,
         "runs": recent_runs,
     }
@@ -170,7 +171,12 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return {"run_id": run_id, "assessment": assessment.__dict__}
+    run = db.get_run(run_id)
+    return {
+        "run_id": run_id,
+        "session_id": run["session_id"] if run else None,
+        "assessment": assessment.__dict__,
+    }
 
 
 @app.get("/api/runs")

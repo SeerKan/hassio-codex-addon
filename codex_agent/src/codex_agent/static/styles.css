@@ -19,6 +19,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     linear-gradient(90deg, rgba(72, 198, 169, 0.08) 1px, transparent 1px),
     linear-gradient(0deg, rgba(72, 198, 169, 0.05) 1px, transparent 1px),
@@ -52,6 +53,7 @@ button {
   width: min(1500px, calc(100vw - 28px));
   margin: 0 auto;
   padding: 18px 0 28px;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -105,6 +107,7 @@ h2 {
 }
 
 .panel {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(25, 31, 34, 0.94);
@@ -200,12 +203,21 @@ h2 {
 
 .session-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   gap: 8px;
+  align-items: stretch;
+}
+
+.session-row {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 #sessionSelect {
+  width: 100%;
   min-width: 0;
+  min-height: 42px;
   appearance: none;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -492,6 +504,7 @@ textarea:focus {
 .history {
   margin-top: 16px;
   padding: 16px;
+  overflow: hidden;
 }
 
 .history-header {
@@ -505,22 +518,32 @@ textarea:focus {
 .runs-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .run-card {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) max-content;
   gap: 10px;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
+  color: var(--text);
   padding: 10px 12px;
-  min-width: 0;
+  text-align: left;
 }
 
 .run-card-body {
   min-width: 0;
+  overflow: hidden;
+  display: grid;
+  gap: 4px;
 }
 
 .run-card strong {
@@ -528,6 +551,7 @@ textarea:focus {
 }
 
 .run-prompt {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: normal;
@@ -535,12 +559,29 @@ textarea:focus {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   max-height: 2.55em;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .run-card span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.run-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-time {
+  justify-self: end;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .login-output {
@@ -643,6 +684,15 @@ textarea:focus {
   .composer,
   .import-box {
     grid-template-columns: 1fr;
+  }
+
+  .run-card {
+    grid-template-columns: 1fr;
+  }
+
+  .run-time {
+    justify-self: start;
+    max-width: 100%;
   }
 
   .activity summary,
