@@ -88,6 +88,17 @@ def test_live_search_can_be_left_as_default() -> None:
     assert 'web_search="live"' not in command
 
 
+def test_selected_model_is_passed_to_codex_exec() -> None:
+    command = make_runner()._build_command(
+        mode="ask",
+        model="gpt-5.4-mini",
+        yolo=False,
+        workspace=Path("/homeassistant"),
+    )
+
+    assert command[command.index("--model") + 1] == "gpt-5.4-mini"
+
+
 def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:
     runner, db = make_startable_runner(tmp_path, monkeypatch)
     user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
@@ -109,6 +120,7 @@ def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> No
             user,
             "Turn on the kitchen lights",
             "apply",
+            "gpt-5.5",
             None,
             assessment,
             create_new_session=False,
@@ -143,6 +155,7 @@ def test_configuration_apply_creates_first_backup(tmp_path, monkeypatch) -> None
             user,
             "Add a dashboard card for the thermostat",
             "apply",
+            "gpt-5.5",
             None,
             assessment,
             create_new_session=False,
@@ -173,6 +186,7 @@ def test_runs_use_existing_session_when_provided(tmp_path, monkeypatch) -> None:
             user,
             "How many lights are on?",
             "ask",
+            "gpt-5.5",
             session_id,
             assessment,
             create_new_session=False,
@@ -186,6 +200,7 @@ def test_runs_use_existing_session_when_provided(tmp_path, monkeypatch) -> None:
             user,
             "And how many lights are off?",
             "ask",
+            "gpt-5.5",
             session_id,
             assessment,
             create_new_session=False,
@@ -215,6 +230,7 @@ def test_create_new_session_forces_new_thread(tmp_path, monkeypatch) -> None:
             user,
             "Open dashboard entities",
             "ask",
+            "gpt-5.5",
             initial_session_id,
             assessment,
             create_new_session=True,
@@ -228,6 +244,7 @@ def test_create_new_session_forces_new_thread(tmp_path, monkeypatch) -> None:
             user,
             "Now check automations",
             "ask",
+            "gpt-5.5",
             db.get_run(first)["session_id"],
             assessment,
             create_new_session=True,

@@ -1,5 +1,13 @@
+const SESSION_STORAGE_KEY = "codex_session_id";
+const DRAFT_SESSION_ID = "__new_session__";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.13";
+const MODE_STORAGE_KEY = "codex_mode";
+const MODEL_STORAGE_KEY = "codex_model";
+
 const state = {
-  mode: "ask",
+  mode: loadStoredChoice(MODE_STORAGE_KEY, "ask"),
+  selectedModel: loadStoredChoice(MODEL_STORAGE_KEY, ""),
+  modelOptions: [],
   activeSessionId: null,
   draftSession: false,
   pendingApproval: null,
@@ -10,13 +18,26 @@ const state = {
   runStartedAt: null,
   runPhase: "",
   sessions: [],
+  currentDiff: "",
 };
 
-const SESSION_STORAGE_KEY = "codex_session_id";
-const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.12";
-
 const $ = (id) => document.getElementById(id);
+
+function loadStoredChoice(key, fallback) {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storeChoice(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in some embedded browser contexts.
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(apiUrl(path), {
@@ -59,11 +80,11 @@ function resolveSessionId(payload) {
 async function renderStatus(payload) {
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
-    setText("authState", `Codex: ${payload.auth.auth_mode || "configured"}`);
+    setText("authState", payload.auth.auth_mode || "Codex");
   } else if (payload.auth.error) {
-    setText("authState", "Codex: auth invalid");
+    setText("authState", "Auth invalid");
   } else {
-    setText("authState", "Codex: login needed");
+    setText("authState", "Login needed");
   }
   setText("retentionDays", `${payload.settings.retention_days} days`);
   setText("liveSearch", payload.settings.enable_live_search ? "On" : "Off");
@@ -73,6 +94,7 @@ async function renderStatus(payload) {
   const version = core.version || coreConfig.version || "unknown";
   setText("haVersion", `HA ${version} · Add-on ${payload.app_version || APP_VERSION}`);
   $("authPanel").hidden = Boolean(payload.auth.configured);
+  renderModelOptions(payload.models || {});
 
   state.sessions = payload.sessions || [];
   state.activeSessionId = resolveSessionId(payload);
@@ -124,6 +146,32 @@ function renderRuns(runs) {
     card.addEventListener("click", () => loadRun(run.id, true));
     list.appendChild(card);
   }
+}
+
+function renderModelOptions(models) {
+  const select = $("modelSelect");
+  if (!select) return;
+
+  const options = Array.isArray(models.options) ? models.options.slice(0, 10) : [];
+  state.modelOptions = options;
+  const defaultModel = models.default || options[0]?.id || "";
+  const selectedStillAvailable = options.some((model) => model.id === state.selectedModel);
+  if (!state.selectedModel || !selectedStillAvailable) {
+    state.selectedModel = defaultModel;
+    storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
+  }
+
+  select.innerHTML = "";
+  for (const model of options) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.label || model.id;
+    option.title = model.description || "";
+    select.appendChild(option);
+  }
+  select.disabled = options.length === 0;
+  select.value = state.selectedModel;
+  select.title = options.find((model) => model.id === state.selectedModel)?.description || "";
 }
 
 function renderSessions() {
@@ -680,7 +728,8 @@ function toolDetails(item) {
   if (item.tool && !item.name) parts.push(`Tool\n${cleanTerminalText(item.tool)}`);
   const output = item.aggregated_output || item.output || item.result;
   if (typeof output === "string" && output.trim()) {
-    parts.push(`Output\n${humanizeDetails(output)}`);
+    const details = humanizeDetails(output);
+    if (details) parts.push(`Output\n${details}`);
   }
   if (item.exit_code !== undefined && item.exit_code !== null) {
     parts.push(`Exit code\n${item.exit_code}`);
@@ -706,8 +755,18 @@ function humanizeDisplayText(value) {
 function humanizeDetails(value) {
   const text = cleanTerminalText(value).trim();
   if (!text) return "";
+  if (looksLikeDiff(text)) return "Diff output moved to the Changes button.";
   if (!looksLikeJson(text)) return text;
   return "Structured output omitted";
+}
+
+function looksLikeDiff(value) {
+  const text = cleanTerminalText(value);
+  return (
+    /^diff --git /m.test(text) ||
+    /^@@ .+ @@/m.test(text) ||
+    (/^--- /m.test(text) && /^\+\+\+ /m.test(text))
+  );
 }
 
 function looksLikeJson(value) {
@@ -754,15 +813,64 @@ function appendFinalAnswer(run) {
 }
 
 function appendDiff(run) {
-  if (!run.diff || document.querySelector(`[data-diff-for="${run.id}"]`)) return;
-  const diff = document.createElement("details");
-  diff.className = "activity activity-tool";
-  diff.dataset.diffFor = run.id;
-  diff.innerHTML = "<summary><span>Changes</span><span>Review the generated diff</span></summary>";
-  const pre = document.createElement("pre");
-  pre.textContent = run.diff;
-  diff.appendChild(pre);
-  appendActivityNode(diff);
+  state.currentDiff = run.diff || "";
+  renderDiffButton(state.currentDiff);
+}
+
+function renderDiffButton(diff) {
+  const button = $("showDiff");
+  if (!button) return;
+  if (!diff) {
+    button.hidden = true;
+    button.disabled = true;
+    button.innerHTML = '<span class="diff-plus">+0</span><span class="diff-minus">-0</span>';
+    return;
+  }
+
+  const counts = diffCounts(diff);
+  button.hidden = false;
+  button.disabled = false;
+  button.innerHTML = `
+    <span class="diff-plus">+${counts.added}</span>
+    <span class="diff-minus">-${counts.removed}</span>
+  `;
+}
+
+function diffCounts(diff) {
+  let added = 0;
+  let removed = 0;
+  for (const line of cleanTerminalText(diff).split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added += 1;
+    if (line.startsWith("-")) removed += 1;
+  }
+  return { added, removed };
+}
+
+function showDiffModal() {
+  if (!state.currentDiff) return;
+  $("diffBody").innerHTML = renderDiff(state.currentDiff);
+  $("diffModal").hidden = false;
+  $("closeDiff").focus();
+}
+
+function hideDiffModal() {
+  $("diffModal").hidden = true;
+}
+
+function renderDiff(diff) {
+  const lines = cleanTerminalText(diff).split("\n");
+  return lines
+    .map((line) => {
+      let className = "diff-line context";
+      if (line.startsWith("@@")) className = "diff-line hunk";
+      else if (line.startsWith("diff --git") || line.startsWith("index ")) className = "diff-line file";
+      else if (line.startsWith("+++") || line.startsWith("---")) className = "diff-line file";
+      else if (line.startsWith("+")) className = "diff-line added";
+      else if (line.startsWith("-")) className = "diff-line removed";
+      return `<div class="${className}"><code>${escapeHtml(line || " ")}</code></div>`;
+    })
+    .join("");
 }
 
 function setRunState(text) {
@@ -788,11 +896,15 @@ function setEmptyState(title, message) {
 }
 
 function showStartingState(title, message) {
+  state.currentDiff = "";
+  renderDiffButton("");
   setRunState(title);
   setEmptyState(title, message);
 }
 
 function startRunFeedback(phase, message) {
+  state.currentDiff = "";
+  renderDiffButton("");
   state.runStartedAt = Date.now();
   state.runPhase = phase;
   setWorkingState(phase, message);
@@ -850,6 +962,14 @@ function setAllActivityOpen(open) {
   if (tray) tray.open = open;
   for (const item of document.querySelectorAll("#runOutput details.activity:not(.no-details)")) {
     item.open = open;
+  }
+}
+
+function setMode(mode) {
+  state.mode = ["ask", "propose", "apply"].includes(mode) ? mode : "ask";
+  storeChoice(MODE_STORAGE_KEY, state.mode);
+  for (const item of document.querySelectorAll(".mode")) {
+    item.classList.toggle("active", item.dataset.mode === state.mode);
   }
 }
 
@@ -969,6 +1089,7 @@ async function submitRun(approved = false) {
   const body = {
     prompt,
     mode: state.mode,
+    model: state.selectedModel,
     approved,
     yolo: $("yolo").checked,
     secret_access_approved: $("secretApproved").checked,
@@ -1085,13 +1206,18 @@ async function copyText(value) {
 }
 
 function bind() {
+  setMode(state.mode);
   for (const button of document.querySelectorAll(".mode")) {
     button.addEventListener("click", () => {
-      for (const item of document.querySelectorAll(".mode")) item.classList.remove("active");
-      button.classList.add("active");
-      state.mode = button.dataset.mode;
+      setMode(button.dataset.mode);
     });
   }
+  $("modelSelect").addEventListener("change", (event) => {
+    state.selectedModel = event.target.value;
+    storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
+    const selected = state.modelOptions.find((model) => model.id === state.selectedModel);
+    event.target.title = selected?.description || "";
+  });
 
   $("composer").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1126,6 +1252,14 @@ function bind() {
   $("refreshRuns").addEventListener("click", loadStatus);
   $("openAllActivity").addEventListener("click", () => setAllActivityOpen(true));
   $("closeAllActivity").addEventListener("click", () => setAllActivityOpen(false));
+  $("showDiff").addEventListener("click", showDiffModal);
+  $("closeDiff").addEventListener("click", hideDiffModal);
+  $("diffModal").addEventListener("click", (event) => {
+    if (event.target.id === "diffModal") hideDiffModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("diffModal").hidden) hideDiffModal();
+  });
 }
 
 bind();

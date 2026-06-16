@@ -14,6 +14,7 @@ from . import __version__
 from .codex_runner import CodexRunner
 from .database import Database
 from .event_view import display_events
+from .models import CODEX_MODEL_IDS, CODEX_MODEL_OPTIONS, DEFAULT_CODEX_MODEL, normalize_model
 from .security import UserContext, classify_prompt, user_from_request
 from .settings import load_settings
 
@@ -71,9 +72,14 @@ def _is_html_request(request: Request) -> bool:
     )
 
 
+def _default_model() -> str:
+    return settings.codex_model if settings.codex_model in CODEX_MODEL_IDS else DEFAULT_CODEX_MODEL
+
+
 class RunRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     mode: Literal["ask", "propose", "apply"] = "ask"
+    model: str | None = Field(default=None, max_length=80)
     approved: bool = False
     yolo: bool = False
     secret_access_approved: bool = False
@@ -126,6 +132,10 @@ async def status(user: UserDep) -> dict:
         "auth": auth,
         "settings": settings.__dict__,
         "app_version": __version__,
+        "models": {
+            "default": _default_model(),
+            "options": CODEX_MODEL_OPTIONS[:10],
+        },
         "home_assistant": ha_context,
         "active_session_id": active_session_id,
         "runs_session_id": active_session_id,
@@ -166,6 +176,10 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
     if payload.yolo and not settings.allow_yolo_mode:
         raise HTTPException(status_code=400, detail="Full-auto mode is disabled in add-on options.")
 
+    selected_model = normalize_model(payload.model) or _default_model()
+    if selected_model not in CODEX_MODEL_IDS:
+        raise HTTPException(status_code=400, detail=f"Unsupported Codex model: {selected_model}")
+
     auth = runner.auth_status(user)
     if not auth.get("configured"):
         raise HTTPException(status_code=401, detail="Codex is not configured for this user.")
@@ -191,6 +205,7 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
             user,
             payload.prompt,
             payload.mode,
+            selected_model,
             None if payload.create_new_session else payload.session_id,
             assessment,
             create_new_session=payload.create_new_session,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.13
+
+- Add a header model selector with the current recommended Codex models.
+- Persist the selected model and mode locally across questions, sessions, and reloads.
+- Pass the selected model to `codex exec --model` for each run.
+- Move generated diffs out of the chat stream into a toolbar button and PR-style diff modal.
+
 ## 0.1.12
 
 - Force fresh sidebar HTML, CSS, and JavaScript on each add-on version update.

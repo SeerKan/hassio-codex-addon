@@ -32,7 +32,10 @@
         </div>
         <div class="status-strip">
           <span id="haVersion">HA unavailable</span>
-          <span id="authState">Checking auth</span>
+          <label class="model-field">
+            <span id="authState">Codex</span>
+            <select id="modelSelect" aria-label="Codex model"></select>
+          </label>
           <span id="userName">Unknown user</span>
         </div>
       </header>
@@ -102,6 +105,10 @@
           <div id="runToolbar" class="run-toolbar" hidden>
             <span id="runState">Ready</span>
             <div class="toolbar-actions">
+              <button id="showDiff" class="secondary small-button diff-button" type="button" hidden>
+                <span class="diff-plus">+0</span>
+                <span class="diff-minus">-0</span>
+              </button>
               <button id="openAllActivity" class="secondary small-button" type="button">Open all</button>
               <button id="closeAllActivity" class="secondary small-button" type="button">Close all</button>
             </div>
@@ -133,6 +140,19 @@
         <div id="runsList" class="runs-list"></div>
       </section>
     </main>
+
+    <div id="diffModal" class="modal-backdrop" hidden>
+      <section class="diff-modal" role="dialog" aria-modal="true" aria-labelledby="diffTitle">
+        <header class="diff-modal-header">
+          <div>
+            <p class="eyebrow">Changes</p>
+            <h2 id="diffTitle">Generated diff</h2>
+          </div>
+          <button id="closeDiff" class="secondary small-button" type="button">Close</button>
+        </header>
+        <div id="diffBody" class="diff-body"></div>
+      </section>
+    </div>
 
     <script src="static/app.js?v=__APP_VERSION__" type="module"></script>
   </body>

@@ -113,6 +113,7 @@ h2 {
 }
 
 .status-strip span,
+.model-field,
 .meta-grid div {
   border: 1px solid var(--line);
   background: rgba(25, 31, 34, 0.82);
@@ -120,6 +121,35 @@ h2 {
   border-radius: 6px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.model-field {
+  display: grid;
+  grid-template-columns: auto minmax(110px, 150px);
+  gap: 8px;
+  align-items: center;
+  min-height: 38px;
+}
+
+.model-field span {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.model-field select {
+  width: 100%;
+  border: 1px solid rgba(51, 64, 71, 0.85);
+  border-radius: 5px;
+  background: #0d1113;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .panel {
@@ -313,7 +343,7 @@ h2 {
   font-size: 12px;
 }
 
-.run-toolbar span {
+#runState {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -324,6 +354,21 @@ h2 {
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
+}
+
+.diff-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.diff-plus {
+  color: #83d89f;
+}
+
+.diff-minus {
+  color: #ff9b92;
 }
 
 .run-output {
@@ -801,6 +846,82 @@ textarea:focus {
   width: 100%;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(5, 8, 9, 0.72);
+}
+
+.diff-modal {
+  width: min(980px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111719;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+}
+
+.diff-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.diff-body {
+  overflow: auto;
+  background: #0b0f10;
+  padding: 10px 0;
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-line {
+  min-width: max-content;
+  padding: 0 14px;
+  white-space: pre;
+  color: #d8e5df;
+}
+
+.diff-line code {
+  font: inherit;
+}
+
+.diff-line.added {
+  background: rgba(46, 160, 67, 0.18);
+  color: #b7f7c7;
+}
+
+.diff-line.removed {
+  background: rgba(248, 81, 73, 0.18);
+  color: #ffc0bc;
+}
+
+.diff-line.hunk {
+  background: rgba(72, 198, 169, 0.12);
+  color: #8de8d2;
+}
+
+.diff-line.file {
+  background: rgba(245, 193, 92, 0.1);
+  color: #f5d28b;
+  font-weight: 800;
+}
+
 @media (max-width: 860px) {
   .topbar,
   .auth-panel {
@@ -810,6 +931,11 @@ textarea:focus {
 
   .status-strip {
     justify-content: start;
+  }
+
+  .model-field {
+    width: 100%;
+    grid-template-columns: 74px minmax(0, 1fr);
   }
 
   .workspace {

@@ -143,6 +143,7 @@ class CodexRunner:
         user: UserContext,
         prompt: str,
         mode: str,
+        model: str | None,
         session_id: str | None,
         assessment: RiskAssessment,
         *,
@@ -219,6 +220,7 @@ class CodexRunner:
                 home,
                 prompt,
                 mode,
+                model,
                 resolved_session_id,
                 session_history,
                 assessment,
@@ -257,6 +259,7 @@ class CodexRunner:
         home: Path,
         prompt: str,
         mode: str,
+        model: str | None,
         session_id: str,
         session_history: list[dict[str, Any]],
         assessment: RiskAssessment,
@@ -270,7 +273,7 @@ class CodexRunner:
             before = collect_snapshot(max_file_kb=self.settings.max_snapshot_file_kb)
 
         workspace = self._workspace_root()
-        command = self._build_command(mode=mode, yolo=yolo, workspace=workspace)
+        command = self._build_command(mode=mode, model=model, yolo=yolo, workspace=workspace)
         full_prompt = self._build_prompt(
             user=user,
             prompt=prompt,
@@ -347,10 +350,18 @@ class CodexRunner:
             if line:
                 self.db.add_event(run_id, "codex.stderr", line)
 
-    def _build_command(self, *, mode: str, yolo: bool, workspace: Path | None = None) -> list[str]:
+    def _build_command(
+        self,
+        *,
+        mode: str,
+        model: str | None = None,
+        yolo: bool,
+        workspace: Path | None = None,
+    ) -> list[str]:
         command = ["codex", "exec", "--json", "--skip-git-repo-check"]
-        if self.settings.codex_model:
-            command.extend(["--model", self.settings.codex_model])
+        selected_model = model or self.settings.codex_model
+        if selected_model:
+            command.extend(["--model", selected_model])
         if self.settings.enable_live_search:
             command.extend(["--config", 'web_search="live"'])
         command.extend(["--config", 'shell_environment_policy.inherit="all"'])
