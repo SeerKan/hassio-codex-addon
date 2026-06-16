@@ -16,8 +16,16 @@
   box-sizing: border-box;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   overflow-x: hidden;
   background:
@@ -36,8 +44,10 @@ body {
 }
 
 button,
+select,
 textarea {
   font: inherit;
+  min-width: 0;
 }
 
 [hidden] {
@@ -49,11 +59,17 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: progress;
+  opacity: 0.68;
+}
+
 .shell {
-  width: min(1500px, calc(100vw - 28px));
+  width: 100%;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 18px 0 28px;
-  overflow-x: clip;
+  padding: 18px 14px 28px;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -152,6 +168,12 @@ h2 {
 .danger-button {
   background: var(--danger);
   color: #220401;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 12px;
 }
 
 .workspace {
@@ -262,7 +284,7 @@ h2 {
 .conversation {
   min-height: 620px;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -277,6 +299,31 @@ h2 {
 .approval p {
   color: var(--muted);
   margin: 8px 0 12px;
+}
+
+.run-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(13, 17, 19, 0.64);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 
 .run-output {
@@ -334,6 +381,45 @@ h2 {
   color: var(--text);
   line-height: 1.55;
   word-break: break-word;
+}
+
+.activity-tray {
+  margin-top: 10px;
+  border: 1px solid rgba(51, 64, 71, 0.72);
+  border-radius: 8px;
+  background: rgba(13, 17, 19, 0.46);
+  overflow: hidden;
+}
+
+.activity-tray > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.activity-tray > summary span:first-child {
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.activity-tray > summary span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.activity-list {
+  border-top: 1px solid rgba(51, 64, 71, 0.72);
+  padding: 8px;
 }
 
 .markdown-body p,
@@ -416,13 +502,17 @@ h2 {
   background: rgba(32, 40, 44, 0.5);
 }
 
+.activity-list .activity:last-child {
+  margin-bottom: 0;
+}
+
 .activity summary {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
-  min-height: 36px;
-  padding: 8px 10px;
+  min-height: 32px;
+  padding: 6px 10px;
   cursor: pointer;
   color: var(--muted);
 }
@@ -505,6 +595,7 @@ textarea:focus {
   margin-top: 16px;
   padding: 16px;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .history-header {
@@ -518,18 +609,22 @@ textarea:focus {
 .runs-list {
   display: grid;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
 }
 
 .run-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   align-items: center;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -540,10 +635,18 @@ textarea:focus {
 }
 
 .run-card-body {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  min-inline-size: 0;
   overflow: hidden;
   display: grid;
   gap: 4px;
+}
+
+.run-card * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .run-card strong {
@@ -560,7 +663,7 @@ textarea:focus {
   -webkit-box-orient: vertical;
   max-height: 2.55em;
   overflow-wrap: anywhere;
-  word-break: normal;
+  word-break: break-word;
 }
 
 .run-card span {
@@ -574,11 +677,12 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .run-time {
-  justify-self: end;
-  max-width: 180px;
+  display: inline;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -686,13 +790,17 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .run-card {
-    grid-template-columns: 1fr;
+  .run-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .run-time {
-    justify-self: start;
-    max-width: 100%;
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .toolbar-actions button {
+    flex: 1;
   }
 
   .activity summary,

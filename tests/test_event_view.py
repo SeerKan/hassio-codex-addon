@@ -33,7 +33,7 @@ def test_tool_execution_event_is_human_summary() -> None:
     assert "json" not in rendered["payload"].lower()
     assert "{\"result\"" not in rendered["display"]["details"]
     assert "Structured output omitted" in rendered["display"]["details"]
-    assert "[redacted]" in rendered["payload"]
+    assert "[redacted]" in rendered["display"]["details"]
 
 
 def test_agent_answer_shows_as_markdown_friendly_text() -> None:
@@ -69,3 +69,38 @@ def test_turn_completed_reports_token_summary() -> None:
     assert rendered["type"] == "Done"
     assert "250" in rendered["payload"]
     assert "77" in rendered["payload"]
+
+
+def test_underscore_item_events_are_humanized() -> None:
+    payload = {
+        "type": "item_completed",
+        "item": {
+            "type": "function_call",
+            "name": "shell",
+            "arguments": "{\"cmd\":\"ls\"}",
+        },
+    }
+    event = _event(4, "item_completed", json.dumps(payload))
+
+    rendered = display_events([event])[0]
+
+    assert rendered["type"] == "Tool finished"
+    assert rendered["display"]["kind"] == "tool"
+    assert rendered["payload"] == "Tool shell"
+    assert "{\"cmd\"" not in rendered["payload"]
+
+
+def test_direct_item_payload_is_humanized() -> None:
+    payload = {
+        "type": "local_shell_call",
+        "command": "printf '{\"ok\": true}'",
+        "output": "{\"ok\": true}",
+        "exit_code": 0,
+    }
+    event = _event(5, "item.completed", json.dumps(payload))
+
+    rendered = display_events([event])[0]
+
+    assert rendered["type"] == "Tool finished"
+    assert "Shell command completed" in rendered["payload"]
+    assert "Structured output omitted" in rendered["display"]["details"]

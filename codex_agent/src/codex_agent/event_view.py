@@ -18,7 +18,7 @@ def display_events(raw_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def display_event(event: dict[str, Any]) -> dict[str, Any]:
     payload = _parse_payload(event.get("payload"))
-    event_type = event.get("type") or "event"
+    event_type = _event_key(event.get("type") or "event")
 
     if event_type == "codex.command":
         return _compose(event, "Run started", _command_summary(payload), kind="activity")
@@ -44,7 +44,14 @@ def display_event(event: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _compose(event, _label(event_type), str(payload), kind="activity")
 
-    inner_type = payload.get("type", event_type)
+    inner_type = _event_key(payload.get("type", event_type))
+
+    if _is_item_event(inner_type) or (
+        _is_item_event(event_type) and inner_type not in _NON_ITEM_PAYLOAD_EVENTS
+    ):
+        item_event_type = inner_type if _is_item_event(inner_type) else event_type
+        item = _item_from_payload(item_event_type, payload)
+        return _item_event(event, item_event_type, item)
 
     if inner_type in {"thread.started"}:
         thread_id = _clean_text(payload.get("thread_id", ""))
@@ -62,10 +69,6 @@ def display_event(event: dict[str, Any]) -> dict[str, Any]:
     if inner_type in {"turn.failed", "error"}:
         message = _human_message(payload)
         return _compose(event, "Run failed", message, kind="message")
-
-    if inner_type in {"item.started", "item.completed"}:
-        item = payload.get("item") if isinstance(payload.get("item"), dict) else {}
-        return _item_event(event, inner_type, item)
 
     return _compose(event, _label(inner_type), _human_message(payload))
 
@@ -95,10 +98,10 @@ def _backup_event(event_type: str, payload: Any, event: dict[str, Any]) -> dict[
 
 
 def _item_event(event: dict[str, Any], event_type: str, item: dict[str, Any]) -> dict[str, Any]:
-    item_type = _clean_text(item.get("type") or "item")
-    complete = event_type == "item.completed"
+    item_type = _event_key(item.get("type") or "item")
+    complete = _is_completion_event(event_type)
 
-    if item_type == "agent_message" or (
+    if item_type == "agent.message" or (
         item_type == "message" and item.get("role") in {"", None, "assistant"}
     ):
         message = _extract_item_text(item)
@@ -118,16 +121,7 @@ def _item_event(event: dict[str, Any], event_type: str, item: dict[str, Any]) ->
             text = "Reasoning finished" if complete else "Reasoning"
         return _compose(event, "Thinking", text, kind="activity")
 
-    if item_type in {
-        "command_execution",
-        "exec_command",
-        "function_call",
-        "local_shell_call",
-        "mcp_tool_call",
-        "shell_command",
-        "tool_call",
-        "web_search_call",
-    }:
+    if item_type in _TOOL_ITEM_TYPES:
         summary = _tool_summary(item, complete)
         details = _tool_details(item)
         return _compose(
@@ -140,10 +134,57 @@ def _item_event(event: dict[str, Any], event_type: str, item: dict[str, Any]) ->
 
     return _compose(
         event,
-        _label(item_type),
+        f"{_label(item_type)} {'completed' if complete else 'started'}",
         _extract_item_text(item) or _human_message(item),
         kind="activity",
     )
+
+
+_TOOL_ITEM_TYPES = {
+    "command.execution",
+    "exec.command",
+    "function.call",
+    "local.shell.call",
+    "mcp.tool.call",
+    "shell.command",
+    "tool.call",
+    "web.search.call",
+}
+
+_NON_ITEM_PAYLOAD_EVENTS = {
+    "error",
+    "message.completed",
+    "thread.started",
+    "turn.completed",
+    "turn.failed",
+    "turn.started",
+}
+
+
+def _event_key(value: Any) -> str:
+    return _clean_text(value).strip().replace("_", ".").lower()
+
+
+def _is_item_event(value: Any) -> bool:
+    return _event_key(value) in {"item.started", "item.completed", "item.start", "item.complete"}
+
+
+def _is_completion_event(value: Any) -> bool:
+    return _event_key(value) in {
+        "item.completed",
+        "item.complete",
+        "turn.completed",
+        "message.completed",
+    }
+
+
+def _item_from_payload(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    item = payload.get("item")
+    if isinstance(item, dict):
+        return item
+    if _is_item_event(event_type):
+        return payload
+    return {}
 
 
 def _compose(
@@ -183,7 +224,7 @@ def _tool_summary(item: dict[str, Any], complete: bool) -> str:
         status = "completed" if complete else "started"
         if "exit_code" in item and item.get("exit_code") not in {None, ""}:
             status = f"completed (exit code {item.get('exit_code')})"
-        return f"{base} {status}: { _short_text(_redact_sensitive(command), max_length=200)}"
+        return f"{base} {status}"
 
     if item.get("name"):
         return f"Tool {item.get('name')}"

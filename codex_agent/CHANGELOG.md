@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.11
+
+- Fix New session clicks by removing invalid nested label markup around session controls.
+- Constrain Recent runs with single-column cards so long prompts cannot widen the page.
+- Normalize item started/completed events into concise human-readable activity.
+- Keep tool activity collapsed by default and add Open all / Close all controls.
+- Show immediate feedback while a run or new session is starting.
+
 ## 0.1.10
 
 - Fix the session selector layout so session names are visible and selectable.

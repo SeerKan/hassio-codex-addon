@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codex Agent</title>
-    <link rel="stylesheet" href="static/styles.css?v=0.1.10" />
+    <link rel="stylesheet" href="static/styles.css?v=0.1.11" />
   </head>
   <body>
     <main class="shell">
@@ -45,13 +45,13 @@
             <button class="mode" data-mode="apply">Apply</button>
           </div>
 
-          <label class="session-row">
-            <span class="eyebrow">Session</span>
+          <div class="session-row">
+            <label class="eyebrow" for="sessionSelect">Session</label>
             <div class="session-controls">
               <select id="sessionSelect"></select>
               <button id="newSession" class="secondary" type="button">New session</button>
             </div>
-          </label>
+          </div>
 
           <label class="check-row">
             <input id="secretApproved" type="checkbox" />
@@ -79,7 +79,15 @@
           <div id="approvalBox" class="approval" hidden>
             <strong>Approval required</strong>
             <p id="approvalText"></p>
-            <button id="approveRun" class="danger-button">Approve and run</button>
+            <button id="approveRun" class="danger-button" type="button">Approve and run</button>
+          </div>
+
+          <div id="runToolbar" class="run-toolbar" hidden>
+            <span id="runState">Ready</span>
+            <div class="toolbar-actions">
+              <button id="openAllActivity" class="secondary small-button" type="button">Open all</button>
+              <button id="closeAllActivity" class="secondary small-button" type="button">Close all</button>
+            </div>
           </div>
 
           <div id="runOutput" class="run-output">
@@ -103,12 +111,12 @@
       <section class="panel history">
         <div class="history-header">
           <p class="eyebrow">Recent runs</p>
-          <button id="refreshRuns" class="secondary">Refresh</button>
+          <button id="refreshRuns" class="secondary" type="button">Refresh</button>
         </div>
         <div id="runsList" class="runs-list"></div>
       </section>
     </main>
 
-    <script src="static/app.js?v=0.1.10" type="module"></script>
+    <script src="static/app.js?v=0.1.11" type="module"></script>
   </body>
 </html>

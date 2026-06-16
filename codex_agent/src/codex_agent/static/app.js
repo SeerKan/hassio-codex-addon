@@ -88,6 +88,7 @@ function renderRuns(runs) {
   }
   for (const run of runs) {
     const preview = conciseText(run.prompt, 160);
+    const started = new Date(run.started_at).toLocaleString();
     const card = document.createElement("button");
     card.className = "run-card";
     card.type = "button";
@@ -95,9 +96,11 @@ function renderRuns(runs) {
     card.innerHTML = `
       <div class="run-card-body">
         <strong class="run-prompt">${escapeHtml(preview)}</strong>
-        <span class="run-meta">${run.mode} · ${run.risk_level} · ${run.status}</span>
+        <span class="run-meta">
+          ${escapeHtml(run.mode)} · ${escapeHtml(run.risk_level)} · ${escapeHtml(run.status)}
+          <span class="run-time">· ${escapeHtml(started)}</span>
+        </span>
       </div>
-      <span class="run-time">${new Date(run.started_at).toLocaleString()}</span>
     `;
     card.addEventListener("click", () => loadRun(run.id, true));
     list.appendChild(card);
@@ -275,6 +278,41 @@ function parsePayload(payload) {
   }
 }
 
+function normalizeType(type) {
+  return String(type || "")
+    .trim()
+    .replaceAll("_", ".")
+    .toLowerCase();
+}
+
+function isItemEventType(type) {
+  return ["item.started", "item.completed", "item.start", "item.complete"].includes(normalizeType(type));
+}
+
+function isCompletionEvent(type) {
+  return ["item.completed", "item.complete", "turn.completed", "message.completed"].includes(
+    normalizeType(type),
+  );
+}
+
+function isNonItemPayloadEvent(type) {
+  return [
+    "error",
+    "message.completed",
+    "thread.started",
+    "turn.completed",
+    "turn.failed",
+    "turn.started",
+  ].includes(normalizeType(type));
+}
+
+function itemFromPayload(type, payload) {
+  if (!payload || typeof payload !== "object") return {};
+  if (payload.item && typeof payload.item === "object") return payload.item;
+  if (isItemEventType(type)) return payload;
+  return {};
+}
+
 function appendEvent(event) {
   const out = $("runOutput");
   const empty = out.querySelector(".empty-state");
@@ -282,8 +320,52 @@ function appendEvent(event) {
 
   const node = renderEvent(event);
   if (!node) return;
-  out.appendChild(node);
+  appendRenderedNode(node);
   out.scrollTop = out.scrollHeight;
+}
+
+function appendRenderedNode(node) {
+  if (node.classList.contains("activity")) {
+    appendActivityNode(node);
+    return;
+  }
+  const tray = $("runActivityTray");
+  if (tray) {
+    $("runOutput").insertBefore(node, tray);
+    return;
+  }
+  $("runOutput").appendChild(node);
+}
+
+function appendActivityNode(node) {
+  const tray = ensureActivityTray();
+  tray.querySelector(".activity-list").appendChild(node);
+  updateActivityCount();
+}
+
+function ensureActivityTray() {
+  let tray = $("runActivityTray");
+  if (tray) return tray;
+
+  tray = document.createElement("details");
+  tray.id = "runActivityTray";
+  tray.className = "activity-tray";
+  tray.innerHTML = `
+    <summary>
+      <span>Activity</span>
+      <span id="activityCount">0 events</span>
+    </summary>
+    <div class="activity-list"></div>
+  `;
+  $("runOutput").appendChild(tray);
+  return tray;
+}
+
+function updateActivityCount() {
+  const countNode = $("activityCount");
+  if (!countNode) return;
+  const count = document.querySelectorAll("#runActivityTray .activity").length;
+  countNode.textContent = `${count} ${count === 1 ? "event" : "events"}`;
 }
 
 function renderEvent(event) {
@@ -293,13 +375,14 @@ function renderEvent(event) {
   }
 
   const payload = parsePayload(event.payload);
+  const eventType = normalizeType(event.type);
 
-  if (event.type === "codex.command") {
+  if (eventType === "codex.command") {
     const argv = Array.isArray(payload.argv) ? payload.argv : [];
     return activityNode("Run started", commandPreview(argv), "activity-muted", commandDetails(argv));
   }
 
-  if (event.type === "codex.stderr" || event.type === "codex.error") {
+  if (eventType === "codex.stderr" || eventType === "codex.error") {
     const message = humanMessage(payload);
     if (/^Reading additional input from stdin/i.test(message)) {
       return activityNode("Prompt sent", "Codex received the request", "activity-muted");
@@ -307,15 +390,20 @@ function renderEvent(event) {
     return messageNode("Notice", message, "notice");
   }
 
-  if (event.type.startsWith("backup.")) {
-    return renderBackupEvent(event.type, payload);
+  if (eventType.startsWith("backup.")) {
+    return renderBackupEvent(eventType, payload);
   }
 
   if (typeof payload === "string") {
-    return activityNode(labelForType(event.type), payload, "activity-muted");
+    return activityNode(labelForType(eventType), payload, "activity-muted");
   }
 
-  const type = payload.type || event.type;
+  const type = normalizeType(payload.type || eventType);
+  if (isItemEventType(type) || (isItemEventType(eventType) && !isNonItemPayloadEvent(type))) {
+    const itemEventType = isItemEventType(type) ? type : eventType;
+    return renderItemEvent(itemEventType, itemFromPayload(itemEventType, payload));
+  }
+
   if (type === "thread.started") {
     return activityNode("Session opened", shortId(payload.thread_id), "activity-muted");
   }
@@ -331,10 +419,6 @@ function renderEvent(event) {
   if (type === "error") {
     return messageNode("Codex", humanMessage(payload), "notice");
   }
-  if (type === "item.started" || type === "item.completed") {
-    return renderItemEvent(type, payload.item || {});
-  }
-
   return activityNode(labelForType(type), summarizeObject(payload), "activity-muted");
 }
 
@@ -342,8 +426,8 @@ function renderDisplayEvent(display, fallbackType) {
   if (!display) return null;
 
   const title = display.title || labelForType(fallbackType);
-  const summary = display.summary || "";
-  const details = display.details || "";
+  const summary = humanizeDisplayText(display.summary || "");
+  const details = humanizeDetails(display.details || "");
   const kind = String(display.kind || "").toLowerCase();
 
   if (kind === "message") {
@@ -362,8 +446,8 @@ function renderDisplayEvent(display, fallbackType) {
 }
 
 function renderItemEvent(type, item) {
-  const itemType = item.type || "item";
-  const complete = type === "item.completed";
+  const itemType = normalizeType(item.type || "item");
+  const complete = isCompletionEvent(type);
   const text = extractItemText(item);
 
   if (isAssistantMessage(item)) {
@@ -383,7 +467,8 @@ function renderItemEvent(type, item) {
     return activityNode(label, toolSummary(item), "activity-tool", toolDetails(item));
   }
 
-  return activityNode(labelForType(itemType), conciseText(text || summarizeObject(item)), "activity-muted");
+  const label = complete ? `${labelForType(itemType)} completed` : `${labelForType(itemType)} started`;
+  return activityNode(label, conciseText(text || summarizeObject(item) || "No details"), "activity-muted");
 }
 
 function renderBackupEvent(type, payload) {
@@ -403,23 +488,25 @@ function renderBackupEvent(type, payload) {
 }
 
 function isAssistantMessage(item) {
+  const type = normalizeType(item.type);
   return (
-    item.type === "agent_message" ||
-    (item.type === "message" && (!item.role || item.role === "assistant"))
+    type === "agent.message" ||
+    (type === "message" && (!item.role || item.role === "assistant"))
   );
 }
 
 function isToolItem(type) {
+  const normalized = normalizeType(type);
   return [
-    "command_execution",
-    "exec_command",
-    "function_call",
-    "local_shell_call",
-    "mcp_tool_call",
-    "shell_command",
-    "tool_call",
-    "web_search_call",
-  ].includes(type);
+    "command.execution",
+    "exec.command",
+    "function.call",
+    "local.shell.call",
+    "mcp.tool.call",
+    "shell.command",
+    "tool.call",
+    "web.search.call",
+  ].includes(normalized);
 }
 
 function extractItemText(item) {
@@ -463,19 +550,21 @@ function messageNode(title, text, className) {
 function activityNode(title, summary, className, details = "") {
   const wrapper = document.createElement("details");
   wrapper.className = `activity ${className}`;
-  if (!details) wrapper.classList.add("no-details");
+  const cleanSummary = humanizeDisplayText(summary);
+  const cleanDetails = humanizeDetails(details);
+  if (!cleanDetails) wrapper.classList.add("no-details");
 
   const summaryNode = document.createElement("summary");
   const titleNode = document.createElement("span");
   titleNode.textContent = title;
   const detailNode = document.createElement("span");
-  detailNode.textContent = cleanTerminalText(summary);
+  detailNode.textContent = cleanSummary;
   summaryNode.append(titleNode, detailNode);
   wrapper.appendChild(summaryNode);
 
-  if (details) {
+  if (cleanDetails) {
     const pre = document.createElement("pre");
-    pre.textContent = cleanTerminalText(details);
+    pre.textContent = cleanDetails;
     wrapper.appendChild(pre);
   }
   return wrapper;
@@ -524,12 +613,30 @@ function summarizeObject(value) {
   if (value.status) return String(value.status);
   return Object.entries(value)
     .slice(0, 4)
-    .map(([key, item]) => `${key}: ${typeof item === "object" ? summarizeObject(item) : item}`)
+    .map(([key, item]) => {
+      if (item && typeof item === "object") {
+        if (!Array.isArray(item) && item.type) return `${key}: ${labelForType(item.type)}`;
+        return `${key}: ${Array.isArray(item) ? "list" : "details"}`;
+      }
+      return `${key}: ${cleanTerminalText(item)}`;
+    })
     .join(" · ");
 }
 
 function toolSummary(item) {
-  if (item.command) return `Shell: ${conciseText(item.command, 160)}`;
+  if (item.command) {
+    let base = "Shell command";
+    const command = cleanTerminalText(item.command);
+    if (command.includes("http://supervisor") || command.includes("/core/api") || command.includes("/backups")) {
+      base = "Home Assistant API request";
+    } else if (command.includes("curl")) {
+      base = "Home Assistant HTTP request";
+    }
+    if (item.exit_code !== undefined && item.exit_code !== null) {
+      return `${base} completed (exit code ${item.exit_code})`;
+    }
+    return base;
+  }
   if (item.name) return conciseText(item.name, 160);
   if (item.tool) return conciseText(item.tool, 160);
   return labelForType(item.type || "tool call");
@@ -542,7 +649,7 @@ function toolDetails(item) {
   if (item.tool && !item.name) parts.push(`Tool\n${cleanTerminalText(item.tool)}`);
   const output = item.aggregated_output || item.output || item.result;
   if (typeof output === "string" && output.trim()) {
-    parts.push(`Output\n${cleanTerminalText(output)}`);
+    parts.push(`Output\n${humanizeDetails(output)}`);
   }
   if (item.exit_code !== undefined && item.exit_code !== null) {
     parts.push(`Exit code\n${item.exit_code}`);
@@ -555,6 +662,40 @@ function conciseText(value, maxLength = 220) {
   const text = cleanTerminalText(value).replace(/\s+/g, " ").trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function humanizeDisplayText(value) {
+  const text = cleanTerminalText(value).trim();
+  if (!looksLikeJson(text)) return text;
+  const parsed = parsePayload(text);
+  if (!parsed || typeof parsed !== "object") return "Structured event";
+  return humanMessage(parsed) || "Structured event";
+}
+
+function humanizeDetails(value) {
+  const text = cleanTerminalText(value).trim();
+  if (!text) return "";
+  if (!looksLikeJson(text)) return text;
+  return "Structured output omitted";
+}
+
+function looksLikeJson(value) {
+  const text = cleanTerminalText(value).trim();
+  if (!text) return false;
+  if (!((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]")))) {
+    return false;
+  }
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    try {
+      JSON.parse(text.replaceAll('\\"', '"'));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function usageSummary(usage) {
@@ -575,7 +716,7 @@ function appendFinalAnswer(run) {
 
   const final = messageNode("Answer", run.final_message, "assistant-message");
   final.dataset.finalFor = run.id;
-  $("runOutput").appendChild(final);
+  appendRenderedNode(final);
 }
 
 function appendDiff(run) {
@@ -583,12 +724,55 @@ function appendDiff(run) {
   const diff = document.createElement("details");
   diff.className = "activity activity-tool";
   diff.dataset.diffFor = run.id;
-  diff.open = true;
   diff.innerHTML = "<summary><span>Changes</span><span>Review the generated diff</span></summary>";
   const pre = document.createElement("pre");
   pre.textContent = run.diff;
   diff.appendChild(pre);
-  $("runOutput").appendChild(diff);
+  appendActivityNode(diff);
+}
+
+function setRunState(text) {
+  const toolbar = $("runToolbar");
+  if (!toolbar) return;
+  toolbar.hidden = false;
+  setText("runState", text);
+}
+
+function setRunButtonBusy(busy, label = "Run Codex") {
+  const button = $("runButton");
+  button.disabled = busy;
+  button.textContent = busy ? label : "Run Codex";
+}
+
+function setEmptyState(title, message) {
+  $("runOutput").innerHTML = `
+    <div class="empty-state">
+      <h2>${escapeHtml(title)}</h2>
+      <p>${escapeHtml(message)}</p>
+    </div>
+  `;
+}
+
+function showStartingState(title, message) {
+  setRunState(title);
+  setEmptyState(title, message);
+}
+
+function setAllActivityOpen(open) {
+  const tray = $("runActivityTray");
+  if (tray) tray.open = open;
+  for (const item of document.querySelectorAll("#runOutput details.activity:not(.no-details)")) {
+    item.open = open;
+  }
+}
+
+function runStatusText(run) {
+  if (!run) return "Ready";
+  if (run.status === "queued") return "Queued";
+  if (run.status === "running") return "Running";
+  if (run.status === "completed") return "Completed";
+  if (run.status === "failed") return "Failed";
+  return labelForType(run.status || "ready");
 }
 
 function renderRun(run, events, reset = false) {
@@ -596,6 +780,7 @@ function renderRun(run, events, reset = false) {
     $("runOutput").innerHTML = "";
     state.lastEventId = 0;
   }
+  setRunState(runStatusText(run));
   for (const event of events) {
     state.lastEventId = Math.max(state.lastEventId, event.id);
     appendEvent(event);
@@ -636,14 +821,29 @@ function activateSession(sessionId) {
 }
 
 async function startNewSession() {
-  const payload = await api("api/sessions", {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-  activateSession(payload.session_id);
-  await loadStatus();
-  activateSession(payload.session_id);
-  renderRuns([]);
+  const button = $("newSession");
+  button.disabled = true;
+  button.textContent = "Creating...";
+  showStartingState("Creating new session", "Preparing a clean conversation context.");
+  try {
+    const payload = await api("api/sessions", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    activateSession(payload.session_id);
+    await loadStatus();
+    activateSession(payload.session_id);
+    renderRuns([]);
+    setRunState("New session ready");
+    setEmptyState("New session ready", "Send a prompt to start this conversation.");
+    $("prompt").focus();
+  } catch (error) {
+    setRunState("Session failed");
+    setEmptyState("Could not create session", error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "New session";
+  }
 }
 
 async function loadRun(runId, reset = false) {
@@ -686,6 +886,8 @@ async function submitRun(approved = false) {
   };
 
   $("approvalBox").hidden = true;
+  setRunButtonBusy(true, "Starting...");
+  showStartingState("Starting Codex", "Creating the run and opening the session.");
   try {
     const payload = await api("api/runs", {
       method: "POST",
@@ -697,7 +899,7 @@ async function submitRun(approved = false) {
       activateSession(payload.session_id);
       await loadStatus();
     }
-    $("runOutput").innerHTML = "";
+    showStartingState("Run started", "Waiting for the first response.");
     await loadRun(payload.run_id, true);
   } catch (error) {
     if (error.status === 409) {
@@ -705,9 +907,14 @@ async function submitRun(approved = false) {
       const assessment = error.payload.detail.assessment;
       $("approvalText").textContent = `${assessment.warning} ${assessment.reasons.join(" ")}`;
       $("approvalBox").hidden = false;
+      setRunState("Approval required");
+      setEmptyState("Approval required", "Review the warning above, then approve the run if it looks right.");
       return;
     }
-    alert(error.message);
+    setRunState("Run failed");
+    setEmptyState("Could not start run", error.message);
+  } finally {
+    setRunButtonBusy(false);
   }
 }
 
@@ -819,6 +1026,8 @@ function bind() {
     await startNewSession();
   });
   $("refreshRuns").addEventListener("click", loadStatus);
+  $("openAllActivity").addEventListener("click", () => setAllActivityOpen(true));
+  $("closeAllActivity").addEventListener("click", () => setAllActivityOpen(false));
 }
 
 bind();
