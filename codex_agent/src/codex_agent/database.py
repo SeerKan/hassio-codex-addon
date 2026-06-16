@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 import threading
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -39,9 +40,18 @@ class Database:
                     last_seen_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS runs (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
+                    session_id TEXT,
                     prompt TEXT NOT NULL,
                     mode TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -86,6 +96,19 @@ class Database:
                 """
             )
 
+            if not self._column_exists("runs", "session_id"):
+                self._conn.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
+
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_user_updated_at ON sessions(user_id, updated_at DESC)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runs_user_started_at ON runs(user_id, started_at DESC)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runs_session_started_at ON runs(session_id, started_at DESC)"
+            )
+
     def upsert_user(self, user_id: str, username: str, display_name: str, safe_id: str) -> None:
         now = utcnow()
         with self._lock, self._conn:
@@ -102,6 +125,110 @@ class Database:
                 """,
                 (user_id, username, display_name, safe_id, now, now),
             )
+
+    def create_session(self, user_id: str, title: str) -> str:
+        session_id = str(uuid.uuid4())
+        now = utcnow()
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO sessions (id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, user_id, title, now, now),
+            )
+        return session_id
+
+    def update_session(self, session_id: str, user_id: str, *, title: str | None = None) -> None:
+        values = [utcnow()]
+        assignments = ["updated_at = ?"]
+        if title is not None:
+            assignments.append("title = ?")
+            values.insert(1, title)
+
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE sessions SET {', '.join(assignments)} WHERE id = ? AND user_id = ?",
+                tuple(values + [session_id, user_id]),
+            )
+
+    def list_sessions(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT
+                    s.id,
+                    s.title,
+                    s.created_at,
+                    s.updated_at,
+                    (
+                        SELECT COUNT(*)
+                        FROM runs r
+                        WHERE r.session_id = s.id
+                    ) AS run_count,
+                    (
+                        SELECT r.prompt
+                        FROM runs r
+                        WHERE r.session_id = s.id
+                        ORDER BY r.started_at DESC
+                        LIMIT 1
+                    ) AS last_prompt
+                FROM sessions s
+                WHERE s.user_id = ?
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_session(self, session_id: str, user_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM sessions WHERE id = ? AND user_id = ?",
+                (session_id, user_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def latest_session_id(self, user_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def list_session_context(
+        self,
+        session_id: str,
+        user_id: str,
+        limit: int = 8,
+        exclude_run_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            if exclude_run_id:
+                rows = self._conn.execute(
+                    """
+                    SELECT prompt, final_message
+                    FROM runs
+                    WHERE user_id = ? AND session_id = ? AND id != ?
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                    """,
+                    (user_id, session_id, exclude_run_id, limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """
+                    SELECT prompt, final_message
+                    FROM runs
+                    WHERE user_id = ? AND session_id = ?
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                    """,
+                    (user_id, session_id, limit),
+                ).fetchall()
+        return [dict(row) for row in rows]
 
     def create_run(self, record: dict[str, Any]) -> None:
         columns = ", ".join(record)
@@ -136,17 +263,26 @@ class Database:
             row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         return dict(row) if row else None
 
-    def list_runs(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    def list_runs(
+        self,
+        user_id: str,
+        limit: int = 20,
+        session_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["user_id = ?"]
+        values: list[Any] = [user_id]
+        if session_id:
+            clauses.append("session_id = ?")
+            values.append(session_id)
+        query = (
+            "SELECT * FROM runs WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY started_at DESC LIMIT ?"
+        )
+        values.append(limit)
+
         with self._lock:
-            rows = self._conn.execute(
-                """
-                SELECT * FROM runs
-                WHERE user_id = ?
-                ORDER BY started_at DESC
-                LIMIT ?
-                """,
-                (user_id, limit),
-            ).fetchall()
+            rows = self._conn.execute(query, tuple(values)).fetchall()
         return [dict(row) for row in rows]
 
     def list_events(self, run_id: str, after_id: int = 0) -> list[dict[str, Any]]:
@@ -232,7 +368,19 @@ class Database:
             deleted["runs"] = cur.rowcount
             cur = self._conn.execute("DELETE FROM auth_jobs WHERE started_at < ?", (cutoff_s,))
             deleted["auth_jobs"] = cur.rowcount
+            cur = self._conn.execute(
+                """
+                DELETE FROM sessions
+                WHERE id NOT IN (SELECT DISTINCT session_id FROM runs WHERE session_id IS NOT NULL)
+                """
+            )
+            deleted["sessions"] = cur.rowcount
         return deleted
+
+    def _column_exists(self, table: str, column: str) -> bool:
+        with self._lock:
+            rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(row[1] == column for row in rows)
 
     def _delete_events(self, run_ids: Iterable[str]) -> int:
         count = 0
