@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.14
+
+- Stop clearing origin-wide browser caches from the ingress page.
+- Add an ingress-safe base path so static assets and API calls resolve under Home Assistant.
+- Render model choices in the initial HTML and keep a frontend fallback list.
+
 ## 0.1.13
 
 - Add a header model selector with the current recommended Codex models.

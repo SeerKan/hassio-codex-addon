@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -49,7 +50,6 @@ async def no_cache_sidebar_assets(request: Request, call_next):
     response.headers["X-Accel-Expires"] = "0"
     response.headers["Vary"] = "Cookie, Accept-Encoding"
     if _is_html_request(request) and request.cookies.get(CACHE_VERSION_COOKIE) != __version__:
-        response.headers["Clear-Site-Data"] = '"cache"'
         response.set_cookie(
             CACHE_VERSION_COOKIE,
             __version__,
@@ -108,7 +108,20 @@ UserDep = Annotated[UserContext, Depends(current_user)]
 async def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace("__APP_VERSION__", __version__)
+    html = html.replace("__MODEL_OPTIONS__", _model_options_html())
     return HTMLResponse(html)
+
+
+def _model_options_html() -> str:
+    return "\n".join(
+        (
+            f'              <option value="{escape(model["id"], quote=True)}"'
+            f' title="{escape(model.get("description", ""), quote=True)}"'
+            f"{' selected' if model['id'] == DEFAULT_CODEX_MODEL else ''}>"
+            f'{escape(model.get("label", model["id"]))}</option>'
+        )
+        for model in CODEX_MODEL_OPTIONS[:10]
+    )
 
 
 @app.get("/health")

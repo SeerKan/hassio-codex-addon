@@ -31,8 +31,8 @@ def main() -> None:
     assert (ADDON / "run.sh").read_text(encoding="utf-8").startswith("#!/usr/bin/with-contenv")
 
     index = (ADDON / "src/codex_agent/static/index.html").read_text(encoding="utf-8")
-    assert "static/app.js?v=__APP_VERSION__" in index
-    assert "static/styles.css?v=__APP_VERSION__" in index
+    assert 'src="static/app.js?v=${window.CODEX_AGENT_VERSION}"' in index
+    assert 'href="static/styles.css?v=${version}"' in index
 
 
 if __name__ == "__main__":

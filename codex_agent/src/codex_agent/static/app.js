@@ -1,8 +1,30 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.13";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.14";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
+const FALLBACK_MODEL_OPTIONS = [
+  {
+    id: "gpt-5.5",
+    label: "GPT-5.5",
+    description: "Newest frontier model; best default for complex Home Assistant work.",
+  },
+  {
+    id: "gpt-5.4",
+    label: "GPT-5.4",
+    description: "Flagship model for professional coding, reasoning, and tool use.",
+  },
+  {
+    id: "gpt-5.4-mini",
+    label: "GPT-5.4 Mini",
+    description: "Faster option for lighter coding tasks and quick inspections.",
+  },
+  {
+    id: "gpt-5.3-codex-spark",
+    label: "GPT-5.3 Codex Spark",
+    description: "Fast research-preview coding iteration model for eligible Pro users.",
+  },
+];
 
 const state = {
   mode: loadStoredChoice(MODE_STORAGE_KEY, "ask"),
@@ -57,7 +79,7 @@ async function api(path, options = {}) {
 
 function apiUrl(path) {
   const cleanPath = String(path).replace(/^\/+/, "");
-  const base = window.location.href.endsWith("/") ? window.location.href : `${window.location.href}/`;
+  const base = document.baseURI || (window.location.href.endsWith("/") ? window.location.href : `${window.location.href}/`);
   return new URL(cleanPath, base).toString();
 }
 
@@ -152,7 +174,8 @@ function renderModelOptions(models) {
   const select = $("modelSelect");
   if (!select) return;
 
-  const options = Array.isArray(models.options) ? models.options.slice(0, 10) : [];
+  const serverOptions = Array.isArray(models.options) ? models.options.slice(0, 10) : [];
+  const options = serverOptions.length ? serverOptions : FALLBACK_MODEL_OPTIONS;
   state.modelOptions = options;
   const defaultModel = models.default || options[0]?.id || "";
   const selectedStillAvailable = options.some((model) => model.id === state.selectedModel);

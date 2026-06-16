@@ -9,19 +9,23 @@
       (() => {
         const version = "__APP_VERSION__";
         window.CODEX_AGENT_VERSION = version;
+        const path = window.location.pathname.endsWith("/")
+          ? window.location.pathname
+          : `${window.location.pathname}/`;
+        const safePath = path
+          .replaceAll("&", "&amp;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("<", "&lt;");
+        document.write(`<base href="${safePath}"><link rel="stylesheet" href="static/styles.css?v=${version}">`);
         try {
           const key = "codex_agent_asset_version";
           const previous = window.localStorage.getItem(key);
-          if (previous && previous !== version && "caches" in window) {
-            window.caches.keys().then((keys) => Promise.all(keys.map((cacheKey) => window.caches.delete(cacheKey))));
-          }
           window.localStorage.setItem(key, version);
         } catch (_error) {
-          // Cache cleanup is best-effort; response headers do the main work.
+          // Versioned asset URLs and no-store headers do the cache-busting work.
         }
       })();
     </script>
-    <link rel="stylesheet" href="static/styles.css?v=__APP_VERSION__" />
   </head>
   <body>
     <main class="shell">
@@ -34,7 +38,9 @@
           <span id="haVersion">HA unavailable</span>
           <label class="model-field">
             <span id="authState">Codex</span>
-            <select id="modelSelect" aria-label="Codex model"></select>
+            <select id="modelSelect" aria-label="Codex model">
+__MODEL_OPTIONS__
+            </select>
           </label>
           <span id="userName">Unknown user</span>
         </div>
@@ -154,6 +160,8 @@
       </section>
     </div>
 
-    <script src="static/app.js?v=__APP_VERSION__" type="module"></script>
+    <script>
+      document.write(`<script src="static/app.js?v=${window.CODEX_AGENT_VERSION}" type="module"><\/script>`);
+    </script>
   </body>
 </html>
