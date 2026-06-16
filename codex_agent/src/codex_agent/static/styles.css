@@ -346,6 +346,41 @@ h2 {
   color: var(--text);
 }
 
+.waiting-state {
+  min-height: 330px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 360px);
+  justify-content: center;
+  align-content: center;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+}
+
+.waiting-state h2 {
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.waiting-state p {
+  line-height: 1.45;
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(158, 170, 167, 0.28);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .message,
 .activity {
   margin-bottom: 10px;
@@ -804,8 +839,17 @@ textarea:focus {
   }
 
   .activity summary,
-  .login-field {
+  .login-field,
+  .waiting-state {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+
+  .waiting-state {
+    text-align: center;
+  }
+
+  .spinner {
+    justify-self: center;
   }
 }

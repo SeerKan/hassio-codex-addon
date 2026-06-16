@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .codex_runner import CodexRunner
 from .database import Database
 from .event_view import display_events
@@ -18,6 +19,7 @@ from .settings import load_settings
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
+CACHE_VERSION_COOKIE = "codex_agent_asset_version"
 
 settings = load_settings()
 db = Database()
@@ -30,18 +32,43 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.11", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version=__version__, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.middleware("http")
 async def no_cache_sidebar_assets(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+    response.headers["Cache-Control"] = (
+        "no-store, no-cache, max-age=0, s-maxage=0, must-revalidate, proxy-revalidate, private"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["Surrogate-Control"] = "no-store"
+    response.headers["X-Accel-Expires"] = "0"
+    response.headers["Vary"] = "Cookie, Accept-Encoding"
+    if _is_html_request(request) and request.cookies.get(CACHE_VERSION_COOKIE) != __version__:
+        response.headers["Clear-Site-Data"] = '"cache"'
+        response.set_cookie(
+            CACHE_VERSION_COOKIE,
+            __version__,
+            httponly=False,
+            max_age=31_536_000,
+            path="/",
+            samesite="lax",
+            secure=request.url.scheme == "https",
+        )
     return response
+
+
+def _is_html_request(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    path = request.url.path
+    return (
+        "text/html" in accept
+        and not path.startswith("/api/")
+        and not path.startswith("/static/")
+    )
 
 
 class RunRequest(BaseModel):
@@ -72,8 +99,10 @@ UserDep = Annotated[UserContext, Depends(current_user)]
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+async def index() -> HTMLResponse:
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = html.replace("__APP_VERSION__", __version__)
+    return HTMLResponse(html)
 
 
 @app.get("/health")
@@ -96,6 +125,7 @@ async def status(user: UserDep) -> dict:
         },
         "auth": auth,
         "settings": settings.__dict__,
+        "app_version": __version__,
         "home_assistant": ha_context,
         "active_session_id": active_session_id,
         "runs_session_id": active_session_id,

@@ -3,8 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-store" />
     <title>Codex Agent</title>
-    <link rel="stylesheet" href="static/styles.css?v=0.1.11" />
+    <script>
+      (() => {
+        const version = "__APP_VERSION__";
+        window.CODEX_AGENT_VERSION = version;
+        try {
+          const key = "codex_agent_asset_version";
+          const previous = window.localStorage.getItem(key);
+          if (previous && previous !== version && "caches" in window) {
+            window.caches.keys().then((keys) => Promise.all(keys.map((cacheKey) => window.caches.delete(cacheKey))));
+          }
+          window.localStorage.setItem(key, version);
+        } catch (_error) {
+          // Cache cleanup is best-effort; response headers do the main work.
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="static/styles.css?v=__APP_VERSION__" />
   </head>
   <body>
     <main class="shell">
@@ -117,6 +134,6 @@
       </section>
     </main>
 
-    <script src="static/app.js?v=0.1.11" type="module"></script>
+    <script src="static/app.js?v=__APP_VERSION__" type="module"></script>
   </body>
 </html>

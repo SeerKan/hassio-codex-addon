@@ -1,19 +1,25 @@
 const state = {
   mode: "ask",
   activeSessionId: null,
+  draftSession: false,
   pendingApproval: null,
   activeRunId: null,
   lastEventId: 0,
   pollTimer: null,
+  feedbackTimer: null,
+  runStartedAt: null,
+  runPhase: "",
   sessions: [],
 };
 
 const SESSION_STORAGE_KEY = "codex_session_id";
+const DRAFT_SESSION_ID = "__new_session__";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.12";
 
 const $ = (id) => document.getElementById(id);
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -28,12 +34,21 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function apiUrl(path) {
+  const cleanPath = String(path).replace(/^\/+/, "");
+  const base = window.location.href.endsWith("/") ? window.location.href : `${window.location.href}/`;
+  return new URL(cleanPath, base).toString();
+}
+
 function setText(id, value) {
   $(id).textContent = value;
 }
 
 function resolveSessionId(payload) {
   const persisted = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (persisted === DRAFT_SESSION_ID) {
+    return DRAFT_SESSION_ID;
+  }
   const sessions = payload.sessions || [];
   if (persisted && sessions.some((session) => session.id === persisted)) {
     return persisted;
@@ -56,18 +71,21 @@ async function renderStatus(payload) {
   const core = payload.home_assistant.core || {};
   const coreConfig = payload.home_assistant.core_config || {};
   const version = core.version || coreConfig.version || "unknown";
-  setText("haVersion", `HA ${version}`);
+  setText("haVersion", `HA ${version} · Add-on ${payload.app_version || APP_VERSION}`);
   $("authPanel").hidden = Boolean(payload.auth.configured);
 
   state.sessions = payload.sessions || [];
   state.activeSessionId = resolveSessionId(payload);
+  state.draftSession = state.activeSessionId === DRAFT_SESSION_ID;
   renderSessions();
 
   if (!state.activeSessionId && state.sessions.length) {
     state.activeSessionId = state.sessions[0].id;
   }
 
-  if (state.activeSessionId) {
+  if (state.draftSession) {
+    renderRuns([]);
+  } else if (state.activeSessionId) {
     const runsSessionId = payload.runs_session_id || payload.active_session_id;
     if (runsSessionId === state.activeSessionId && Array.isArray(payload.runs)) {
       renderRuns(payload.runs);
@@ -87,21 +105,22 @@ function renderRuns(runs) {
     return;
   }
   for (const run of runs) {
-    const preview = conciseText(run.prompt, 160);
+    const preview = conciseText(run.prompt, 96);
     const started = new Date(run.started_at).toLocaleString();
     const card = document.createElement("button");
     card.className = "run-card";
     card.type = "button";
     card.title = run.prompt;
-    card.innerHTML = `
-      <div class="run-card-body">
-        <strong class="run-prompt">${escapeHtml(preview)}</strong>
-        <span class="run-meta">
-          ${escapeHtml(run.mode)} · ${escapeHtml(run.risk_level)} · ${escapeHtml(run.status)}
-          <span class="run-time">· ${escapeHtml(started)}</span>
-        </span>
-      </div>
-    `;
+    const body = document.createElement("span");
+    body.className = "run-card-body";
+    const prompt = document.createElement("strong");
+    prompt.className = "run-prompt";
+    prompt.textContent = preview || "(empty prompt)";
+    const meta = document.createElement("span");
+    meta.className = "run-meta";
+    meta.textContent = `${run.mode} · ${run.risk_level} · ${run.status} · ${started}`;
+    body.append(prompt, meta);
+    card.appendChild(body);
     card.addEventListener("click", () => loadRun(run.id, true));
     list.appendChild(card);
   }
@@ -112,7 +131,15 @@ function renderSessions() {
   if (!select) return;
 
   select.innerHTML = "";
-  if (!state.sessions.length) {
+  if (state.draftSession) {
+    const draft = document.createElement("option");
+    draft.value = DRAFT_SESSION_ID;
+    draft.textContent = "New session";
+    draft.selected = true;
+    select.appendChild(draft);
+  }
+
+  if (!state.sessions.length && !state.draftSession) {
     const empty = document.createElement("option");
     empty.value = "";
     empty.textContent = "No sessions";
@@ -132,7 +159,10 @@ function renderSessions() {
     select.appendChild(option);
   }
 
-  if (!state.activeSessionId || !state.sessions.some((session) => session.id === state.activeSessionId)) {
+  if (
+    !state.draftSession
+    && (!state.activeSessionId || !state.sessions.some((session) => session.id === state.activeSessionId))
+  ) {
     state.activeSessionId = state.sessions[0].id;
   }
 
@@ -316,7 +346,8 @@ function itemFromPayload(type, payload) {
 function appendEvent(event) {
   const out = $("runOutput");
   const empty = out.querySelector(".empty-state");
-  if (empty) out.innerHTML = "";
+  const waiting = out.querySelector(".waiting-state");
+  if (empty || waiting) out.innerHTML = "";
 
   const node = renderEvent(event);
   if (!node) return;
@@ -714,6 +745,9 @@ function appendFinalAnswer(run) {
   );
   if (existing || document.querySelector(`[data-final-for="${run.id}"]`)) return;
 
+  const waiting = $("runOutput").querySelector(".waiting-state");
+  if (waiting) $("runOutput").innerHTML = "";
+
   const final = messageNode("Answer", run.final_message, "assistant-message");
   final.dataset.finalFor = run.id;
   appendRenderedNode(final);
@@ -758,6 +792,59 @@ function showStartingState(title, message) {
   setEmptyState(title, message);
 }
 
+function startRunFeedback(phase, message) {
+  state.runStartedAt = Date.now();
+  state.runPhase = phase;
+  setWorkingState(phase, message);
+  clearInterval(state.feedbackTimer);
+  state.feedbackTimer = setInterval(() => {
+    setRunState(`${state.runPhase} · ${elapsedRunTime()}`);
+    const detail = state.activeRunId
+      ? "Still working. Waiting for the next update from the run."
+      : "Still starting. Waiting for Home Assistant and Codex to accept the run.";
+    updateWorkingDetail(detail);
+  }, 1000);
+}
+
+function stopRunFeedback() {
+  clearInterval(state.feedbackTimer);
+  state.feedbackTimer = null;
+  state.runStartedAt = null;
+  state.runPhase = "";
+}
+
+function setWorkingState(title, message) {
+  setRunState(`${title} · 00:00`);
+  $("runOutput").innerHTML = `
+    <div class="waiting-state">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <h2>${escapeHtml(title)}</h2>
+        <p id="workingDetail">${escapeHtml(message)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function updateWorkingDetail(message) {
+  const detail = $("workingDetail");
+  if (detail) detail.textContent = `${message} ${elapsedRunTime()}`;
+}
+
+function elapsedRunTime() {
+  if (!state.runStartedAt) return "00:00";
+  const seconds = Math.max(0, Math.floor((Date.now() - state.runStartedAt) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
 function setAllActivityOpen(open) {
   const tray = $("runActivityTray");
   if (tray) tray.open = open;
@@ -781,6 +868,14 @@ function renderRun(run, events, reset = false) {
     state.lastEventId = 0;
   }
   setRunState(runStatusText(run));
+  if (["queued", "running"].includes(run.status)) {
+    state.runPhase = runStatusText(run);
+    if (!state.feedbackTimer) {
+      startRunFeedback(runStatusText(run), "Waiting for the next update from the run.");
+    }
+  } else {
+    stopRunFeedback();
+  }
   for (const event of events) {
     state.lastEventId = Math.max(state.lastEventId, event.id);
     appendEvent(event);
@@ -795,7 +890,7 @@ async function loadStatus() {
 }
 
 async function refreshSessionRuns() {
-  if (!state.activeSessionId) {
+  if (!state.activeSessionId || state.draftSession) {
     renderRuns([]);
     return;
   }
@@ -808,12 +903,14 @@ async function refreshSessionRuns() {
 function activateSession(sessionId) {
   if (!sessionId) {
     state.activeSessionId = null;
+    state.draftSession = false;
     localStorage.removeItem(SESSION_STORAGE_KEY);
     renderRuns([]);
     return;
   }
 
   state.activeSessionId = sessionId;
+  state.draftSession = sessionId === DRAFT_SESSION_ID;
   localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   if ($("sessionSelect")) {
     $("sessionSelect").value = sessionId;
@@ -823,19 +920,13 @@ function activateSession(sessionId) {
 async function startNewSession() {
   const button = $("newSession");
   button.disabled = true;
-  button.textContent = "Creating...";
-  showStartingState("Creating new session", "Preparing a clean conversation context.");
+  button.textContent = "Ready";
   try {
-    const payload = await api("api/sessions", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    activateSession(payload.session_id);
-    await loadStatus();
-    activateSession(payload.session_id);
+    activateSession(DRAFT_SESSION_ID);
+    renderSessions();
     renderRuns([]);
     setRunState("New session ready");
-    setEmptyState("New session ready", "Send a prompt to start this conversation.");
+    setEmptyState("New session ready", "Send a prompt to create this conversation.");
     $("prompt").focus();
   } catch (error) {
     setRunState("Session failed");
@@ -881,13 +972,14 @@ async function submitRun(approved = false) {
     approved,
     yolo: $("yolo").checked,
     secret_access_approved: $("secretApproved").checked,
-    session_id: state.activeSessionId,
-    create_new_session: false,
+    session_id: state.draftSession ? null : state.activeSessionId,
+    create_new_session: state.draftSession,
   };
 
   $("approvalBox").hidden = true;
   setRunButtonBusy(true, "Starting...");
-  showStartingState("Starting Codex", "Creating the run and opening the session.");
+  startRunFeedback("Starting", "Creating the run and opening the session.");
+  await nextPaint();
   try {
     const payload = await api("api/runs", {
       method: "POST",
@@ -899,7 +991,7 @@ async function submitRun(approved = false) {
       activateSession(payload.session_id);
       await loadStatus();
     }
-    showStartingState("Run started", "Waiting for the first response.");
+    startRunFeedback("Running", "Waiting for the first response.");
     await loadRun(payload.run_id, true);
   } catch (error) {
     if (error.status === 409) {
@@ -907,10 +999,12 @@ async function submitRun(approved = false) {
       const assessment = error.payload.detail.assessment;
       $("approvalText").textContent = `${assessment.warning} ${assessment.reasons.join(" ")}`;
       $("approvalBox").hidden = false;
+      stopRunFeedback();
       setRunState("Approval required");
       setEmptyState("Approval required", "Review the warning above, then approve the run if it looks right.");
       return;
     }
+    stopRunFeedback();
     setRunState("Run failed");
     setEmptyState("Could not start run", error.message);
   } finally {
@@ -1020,7 +1114,11 @@ function bind() {
     const sessionId = event.target.value || null;
     activateSession(sessionId);
     await refreshSessionRuns();
-    $("runOutput").innerHTML = `<div class="empty-state"><h2>Conversation selected</h2><p>Select a run from this session or start a new one.</p></div>`;
+    if (state.draftSession) {
+      setEmptyState("New session ready", "Send a prompt to create this conversation.");
+    } else {
+      setEmptyState("Conversation selected", "Select a run from this session or start a new one.");
+    }
   });
   $("newSession").addEventListener("click", async () => {
     await startNewSession();

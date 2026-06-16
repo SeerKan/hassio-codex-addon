@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.12
+
+- Force fresh sidebar HTML, CSS, and JavaScript on each add-on version update.
+- Add no-store cache headers for browser, proxy, ingress, and Cloudflare cache layers.
+- Clear browser HTTP/cache-storage entries once when a new add-on version is loaded.
+- Show the running add-on version in the header for quick stale-browser checks.
+- Make New session an immediate draft state that creates the real session on first run.
+- Add elapsed wait feedback while runs are starting or waiting for the next update.
+
 ## 0.1.11
 
 - Fix New session clicks by removing invalid nested label markup around session controls.
