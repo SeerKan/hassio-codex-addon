@@ -1,6 +1,7 @@
 import asyncio
 
-from codex_agent.ha_client import HomeAssistantClient
+from codex_agent import ha_client
+from codex_agent.ha_client import HomeAssistantClient, supervisor_token
 
 
 def test_headers_omit_empty_authorization() -> None:
@@ -15,6 +16,25 @@ def test_headers_include_non_empty_authorization() -> None:
 
     assert client.headers["Authorization"] == "Bearer abc123"
     assert client.token_available is True
+
+
+def test_supervisor_token_reads_s6_environment_file(tmp_path, monkeypatch) -> None:
+    token_file = tmp_path / "SUPERVISOR_TOKEN"
+    token_file.write_text("from-file\n", encoding="utf-8")
+    monkeypatch.delenv("SUPERVISOR_TOKEN", raising=False)
+    monkeypatch.setattr(ha_client, "SUPERVISOR_TOKEN_FILES", (token_file,))
+
+    assert supervisor_token() == "from-file"
+    assert HomeAssistantClient().headers["Authorization"] == "Bearer from-file"
+
+
+def test_supervisor_token_prefers_environment(tmp_path, monkeypatch) -> None:
+    token_file = tmp_path / "SUPERVISOR_TOKEN"
+    token_file.write_text("from-file\n", encoding="utf-8")
+    monkeypatch.setenv("SUPERVISOR_TOKEN", "from-env")
+    monkeypatch.setattr(ha_client, "SUPERVISOR_TOKEN_FILES", (token_file,))
+
+    assert supervisor_token() == "from-env"
 
 
 def test_context_reports_missing_supervisor_token() -> None:

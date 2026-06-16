@@ -28,6 +28,11 @@ def main() -> None:
     assert (ADDON / "Dockerfile").exists()
     assert (ADDON / "DOCS.md").exists()
     assert (ADDON / "README.md").exists()
+    assert (ADDON / "run.sh").read_text(encoding="utf-8").startswith("#!/usr/bin/with-contenv")
+
+    index = (ADDON / "src/codex_agent/static/index.html").read_text(encoding="utf-8")
+    assert f"static/app.js?v={config['version']}" in index
+    assert f"static/styles.css?v={config['version']}" in index
 
 
 if __name__ == "__main__":

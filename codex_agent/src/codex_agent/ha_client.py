@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 SUPERVISOR_URL = "http://supervisor"
 CORE_API_URL = f"{SUPERVISOR_URL}/core/api"
+SUPERVISOR_TOKEN_FILES = (
+    Path("/run/s6/container_environment/SUPERVISOR_TOKEN"),
+    Path("/var/run/s6/container_environment/SUPERVISOR_TOKEN"),
+)
 
 
 class HomeAssistantClient:
     def __init__(self, token: str | None = None) -> None:
-        self.token = token if token is not None else os.environ.get("SUPERVISOR_TOKEN")
+        self.token = token if token is not None else supervisor_token()
 
     @property
     def headers(self) -> dict[str, str]:
@@ -105,3 +110,17 @@ class HomeAssistantClient:
             "domain_counts": dict(sorted(counts.items())),
             "sample_entities": {key: sample_entities[key] for key in sorted(sample_entities)},
         }
+
+
+def supervisor_token() -> str:
+    env_token = os.environ.get("SUPERVISOR_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    for path in SUPERVISOR_TOKEN_FILES:
+        try:
+            token = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if token:
+            return token
+    return ""

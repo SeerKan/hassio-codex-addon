@@ -29,8 +29,18 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.5", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.6", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def no_cache_sidebar_assets(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 class RunRequest(BaseModel):

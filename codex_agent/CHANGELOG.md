@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Force sidebar assets to refresh so the human-readable run renderer loads.
+- Run Codex without its internal bubblewrap sandbox inside the add-on container.
+- Load the Supervisor token through Home Assistant's s6 environment wrapper and file fallback.
+
 ## 0.1.5
 
 - Clean Codex device-login output and expose a clickable login URL.

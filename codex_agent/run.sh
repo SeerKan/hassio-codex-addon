@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/with-contenv bash
 set -euo pipefail
 
 mkdir -p /data/users /data/runs /data/snapshots /data/tmp

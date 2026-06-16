@@ -32,20 +32,22 @@ def test_ask_command_uses_supported_exec_flags() -> None:
     assert command[:3] == ["codex", "exec", "--json"]
     assert "--search" not in command
     assert "--ask-for-approval" not in command
-    assert command[-2:] == ["--sandbox", "read-only"]
+    assert command[-2:] == ["--sandbox", "danger-full-access"]
     assert command[command.index("--config") + 1] == 'web_search="live"'
     assert 'shell_environment_policy.inherit="all"' in command
     assert command[command.index("--cd") + 1] == "/homeassistant"
 
 
-def test_apply_command_uses_workspace_write() -> None:
+def test_apply_command_uses_unsandboxed_addon_execution() -> None:
     command = make_runner()._build_command(
         mode="apply",
         yolo=False,
         workspace=Path("/homeassistant"),
     )
 
-    assert command[-2:] == ["--sandbox", "workspace-write"]
+    assert command[-2:] == ["--sandbox", "danger-full-access"]
+    assert "workspace-write" not in command
+    assert "read-only" not in command
 
 
 def test_yolo_command_bypasses_sandbox() -> None:

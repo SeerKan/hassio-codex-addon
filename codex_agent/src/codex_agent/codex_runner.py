@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .database import Database, utcnow
-from .ha_client import HomeAssistantClient
+from .ha_client import HomeAssistantClient, supervisor_token
 from .security import RiskAssessment, UserContext
 from .settings import DATA_DIR, Settings
 from .snapshot import collect_snapshot, diff_snapshots
@@ -314,10 +314,7 @@ class CodexRunner:
             command.append("--dangerously-bypass-approvals-and-sandbox")
             return command
 
-        if mode in {"ask", "propose"}:
-            command.extend(["--sandbox", "read-only"])
-        else:
-            command.extend(["--sandbox", "workspace-write"])
+        command.extend(["--sandbox", "danger-full-access"])
         return command
 
     def _build_prompt(
@@ -381,6 +378,10 @@ Operational rules:
   only from the global entity registry.
 - If SUPERVISOR_TOKEN is missing, do not send an Authorization header with an
   empty bearer token.
+- Codex's internal Linux sandbox is disabled in this add-on because Home
+  Assistant OS add-on containers do not allow the bubblewrap namespace setup it
+  needs. Treat the selected mode as mandatory: ask/propose must not modify
+  files or call side-effect APIs; apply may change only what the user requested.
 
 User request:
 {prompt}
@@ -392,7 +393,10 @@ User request:
         env["HOME"] = str(home)
         env.setdefault("NO_COLOR", "1")
         env["CODEX_AGENT_HOME_ASSISTANT_ROOT"] = str(WORKSPACE)
-        if not env.get("SUPERVISOR_TOKEN"):
+        token = supervisor_token()
+        if token:
+            env["SUPERVISOR_TOKEN"] = token
+        else:
             env.pop("SUPERVISOR_TOKEN", None)
         return env
 
