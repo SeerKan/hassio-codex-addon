@@ -221,6 +221,11 @@ function appendEvent(event) {
 }
 
 function renderEvent(event) {
+  if (event.display) {
+    const rendered = renderDisplayEvent(event.display, event.type);
+    if (rendered) return rendered;
+  }
+
   const payload = parsePayload(event.payload);
 
   if (event.type === "codex.command") {
@@ -265,6 +270,29 @@ function renderEvent(event) {
   }
 
   return activityNode(labelForType(type), summarizeObject(payload), "activity-muted");
+}
+
+function renderDisplayEvent(display, fallbackType) {
+  if (!display) return null;
+
+  const title = display.title || labelForType(fallbackType);
+  const summary = display.summary || "";
+  const details = display.details || "";
+  const kind = String(display.kind || "").toLowerCase();
+
+  if (kind === "message") {
+    return messageNode(title, summary || "(empty)", "assistant-message");
+  }
+
+  if (kind === "tool") {
+    return activityNode(title, summary || "Tool event", "activity-tool", details);
+  }
+
+  if (kind === "notice") {
+    return messageNode(title, summary || "Notice", "notice");
+  }
+
+  return activityNode(title, summary || "", "activity-muted", details);
 }
 
 function renderItemEvent(type, item) {

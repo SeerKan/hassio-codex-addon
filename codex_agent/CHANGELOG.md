@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Transform run events server-side into safe, human-readable summaries.
+- Add markdown-focused answer rendering and tool summaries that hide raw JSON payloads.
+- Preserve tool detail visibility while suppressing structured JSON in the default sidebar feed.
+
 ## 0.1.7
 
 - Only create the required first backup for configuration-changing apply runs.

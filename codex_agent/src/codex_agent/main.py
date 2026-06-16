@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .codex_runner import CodexRunner
+from .event_view import display_events
 from .database import Database
 from .security import UserContext, classify_prompt, user_from_request
 from .settings import load_settings
@@ -29,7 +30,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.7", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.8", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -170,7 +171,7 @@ async def get_run(run_id: str, user: UserDep, after_event_id: int = 0) -> dict:
     if not run or run["user_id"] != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found.")
     events = db.list_events(run_id, after_id=after_event_id)
-    return {"run": run, "events": events}
+    return {"run": run, "events": display_events(events)}
 
 
 @app.post("/api/maintenance/cleanup")
