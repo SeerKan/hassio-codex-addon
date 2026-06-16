@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.7
+
+- Only create the required first backup for configuration-changing apply runs.
+- Keep entity-control apply runs from calling Supervisor backups.
+- Render answers as markdown and collapse tool activity into human-readable summaries.
+- Trim the Supervisor full-backup request payload and report backup API errors clearly.
+
 ## 0.1.6
 
 - Force sidebar assets to refresh so the human-readable run renderer loads.

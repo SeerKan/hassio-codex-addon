@@ -35,7 +35,7 @@ class HomeAssistantClient:
             raise RuntimeError("SUPERVISOR_TOKEN is not available in this environment.")
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(f"{SUPERVISOR_URL}{path}", headers=self.headers)
-            response.raise_for_status()
+            self._raise_for_status(response, path)
             return response.json()
 
     async def post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -47,7 +47,7 @@ class HomeAssistantClient:
                 headers=self.headers,
                 json=payload,
             )
-            response.raise_for_status()
+            self._raise_for_status(response, path)
             return response.json()
 
     async def core_api_get(self, path: str) -> dict[str, Any]:
@@ -55,7 +55,7 @@ class HomeAssistantClient:
             raise RuntimeError("SUPERVISOR_TOKEN is not available in this environment.")
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(f"{CORE_API_URL}{path}", headers=self.headers)
-            response.raise_for_status()
+            self._raise_for_status(response, f"/core/api{path}")
             return response.json()
 
     async def context(self) -> dict[str, Any]:
@@ -81,10 +81,22 @@ class HomeAssistantClient:
         payload = {
             "name": name,
             "compressed": True,
-            "location": None,
             "background": False,
         }
         return await self.post_json("/backups/new/full", payload)
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response, path: str) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = response.text.strip()
+            if len(detail) > 500:
+                detail = f"{detail[:500]}..."
+            message = f"Supervisor API {path} returned {response.status_code}"
+            if detail:
+                message = f"{message}: {detail}"
+            raise RuntimeError(message) from exc
 
     @staticmethod
     def _summarize_states(value: Any) -> dict[str, Any]:

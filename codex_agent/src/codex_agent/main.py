@@ -29,7 +29,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.6", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.7", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

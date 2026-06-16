@@ -1,8 +1,10 @@
+import asyncio
 from pathlib import Path
 
 from codex_agent import codex_runner
 from codex_agent.codex_runner import MANAGED_CODEX_CONFIG, CodexRunner, clean_terminal_text
-from codex_agent.security import UserContext
+from codex_agent.database import Database
+from codex_agent.security import RiskAssessment, UserContext
 from codex_agent.settings import Settings
 
 CHATGPT_AUTH_JSON = """
@@ -24,6 +26,21 @@ def make_runner(settings: Settings | None = None) -> CodexRunner:
     runner = object.__new__(CodexRunner)
     runner.settings = settings or Settings()
     return runner
+
+
+class FakeHomeAssistant:
+    async def context(self) -> dict:
+        return {"core": {"version": "test"}}
+
+
+def make_startable_runner(tmp_path, monkeypatch) -> tuple[CodexRunner, Database]:
+    monkeypatch.setattr(codex_runner, "USERS_DIR", tmp_path / "users")
+    monkeypatch.setattr(codex_runner.shutil, "which", lambda _name: "/usr/bin/codex")
+    db = Database(tmp_path / "codex_agent.sqlite3")
+    runner = CodexRunner(db, Settings(create_backup_before_first_change=True))
+    runner.ha = FakeHomeAssistant()
+    monkeypatch.setattr(runner, "_run_codex_process", lambda *_args: None)
+    return runner, db
 
 
 def test_ask_command_uses_supported_exec_flags() -> None:
@@ -69,6 +86,72 @@ def test_live_search_can_be_left_as_default() -> None:
     )
 
     assert 'web_search="live"' not in command
+
+
+def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:
+    runner, db = make_startable_runner(tmp_path, monkeypatch)
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    backup_calls = []
+
+    async def fake_backup(run_id: str) -> dict:
+        backup_calls.append(run_id)
+        return {"slug": "backup-runtime"}
+
+    monkeypatch.setattr(runner, "_ensure_first_backup", fake_backup)
+    assessment = RiskAssessment(
+        level="medium",
+        approval_required=False,
+        configuration_change=False,
+    )
+
+    run_id = asyncio.run(
+        runner.start_run(
+            user,
+            "Turn on the kitchen lights",
+            "apply",
+            assessment,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+
+    assert backup_calls == []
+    assert db.get_run(run_id)["backup_slug"] is None
+
+
+def test_configuration_apply_creates_first_backup(tmp_path, monkeypatch) -> None:
+    runner, db = make_startable_runner(tmp_path, monkeypatch)
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    backup_calls = []
+
+    async def fake_backup(run_id: str) -> dict:
+        backup_calls.append(run_id)
+        return {"slug": "backup-config", "job_id": "job-1"}
+
+    monkeypatch.setattr(runner, "_ensure_first_backup", fake_backup)
+    assessment = RiskAssessment(
+        level="medium",
+        approval_required=False,
+        configuration_change=True,
+    )
+
+    run_id = asyncio.run(
+        runner.start_run(
+            user,
+            "Add a dashboard card for the thermostat",
+            "apply",
+            assessment,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+
+    assert backup_calls == [run_id]
+    run = db.get_run(run_id)
+    assert run["backup_slug"] == "backup-config"
+    assert run["backup_job_id"] == "job-1"
 
 
 def test_ensure_user_home_repairs_old_managed_config(tmp_path, monkeypatch) -> None:

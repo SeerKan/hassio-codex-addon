@@ -46,6 +46,30 @@ def test_context_reports_missing_supervisor_token() -> None:
     assert context["core"]["error"] == "SUPERVISOR_TOKEN is not available in this environment."
 
 
+def test_create_full_backup_uses_documented_payload() -> None:
+    client = HomeAssistantClient(token="token")
+    captured = {}
+
+    async def fake_post_json(path: str, payload: dict) -> dict:
+        captured["path"] = path
+        captured["payload"] = payload
+        return {"slug": "backup-1"}
+
+    client.post_json = fake_post_json  # type: ignore[method-assign]
+
+    result = asyncio.run(client.create_full_backup("Test backup"))
+
+    assert result == {"slug": "backup-1"}
+    assert captured == {
+        "path": "/backups/new/full",
+        "payload": {
+            "name": "Test backup",
+            "compressed": True,
+            "background": False,
+        },
+    }
+
+
 def test_summarize_states_counts_domains() -> None:
     summary = HomeAssistantClient._summarize_states(
         [

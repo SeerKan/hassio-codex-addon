@@ -79,6 +79,120 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function renderMarkdown(value) {
+  const lines = cleanTerminalText(value).split("\n");
+  const html = [];
+  let paragraph = [];
+  let listType = "";
+  let codeBlock = null;
+
+  const closeParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = "";
+  };
+
+  for (const line of lines) {
+    const fence = line.match(/^```/);
+    if (fence) {
+      if (codeBlock) {
+        html.push(`<pre><code>${escapeHtml(codeBlock.join("\n"))}</code></pre>`);
+        codeBlock = null;
+      } else {
+        closeParagraph();
+        closeList();
+        codeBlock = [];
+      }
+      continue;
+    }
+
+    if (codeBlock) {
+      codeBlock.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      closeParagraph();
+      closeList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeParagraph();
+      closeList();
+      const level = heading[1].length + 2;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+    if (unordered) {
+      closeParagraph();
+      if (listType !== "ul") {
+        closeList();
+        html.push("<ul>");
+        listType = "ul";
+      }
+      html.push(`<li>${renderInlineMarkdown(unordered[1])}</li>`);
+      continue;
+    }
+
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      closeParagraph();
+      if (listType !== "ol") {
+        closeList();
+        html.push("<ol>");
+        listType = "ol";
+      }
+      html.push(`<li>${renderInlineMarkdown(ordered[1])}</li>`);
+      continue;
+    }
+
+    const quote = line.match(/^\s*>\s?(.+)$/);
+    if (quote) {
+      closeParagraph();
+      closeList();
+      html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    closeList();
+    paragraph.push(line);
+  }
+
+  closeParagraph();
+  closeList();
+  if (codeBlock) {
+    html.push(`<pre><code>${escapeHtml(codeBlock.join("\n"))}</code></pre>`);
+  }
+  return html.join("");
+}
+
+function renderInlineMarkdown(value) {
+  const codeSpans = [];
+  let text = String(value).replace(/`([^`]+)`/g, (_match, code) => {
+    const index = codeSpans.push(`<code>${escapeHtml(code)}</code>`) - 1;
+    return `\u0000CODE${index}\u0000`;
+  });
+
+  text = escapeHtml(text)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s<]+)\)/g, (_match, label, url) => {
+      return `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
+    })
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
+
+  return text.replace(/\u0000CODE(\d+)\u0000/g, (_match, index) => codeSpans[Number(index)] || "");
+}
+
 function cleanTerminalText(value) {
   return String(value || "")
     .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g, "")
@@ -115,7 +229,15 @@ function renderEvent(event) {
   }
 
   if (event.type === "codex.stderr" || event.type === "codex.error") {
-    return messageNode("Notice", humanMessage(payload), "notice");
+    const message = humanMessage(payload);
+    if (/^Reading additional input from stdin/i.test(message)) {
+      return activityNode("Prompt sent", "Codex received the request", "activity-muted");
+    }
+    return messageNode("Notice", message, "notice");
+  }
+
+  if (event.type.startsWith("backup.")) {
+    return renderBackupEvent(event.type, payload);
   }
 
   if (typeof payload === "string") {
@@ -129,6 +251,9 @@ function renderEvent(event) {
   if (type === "turn.started") {
     return activityNode("Working", "Thinking through the request", "activity-muted");
   }
+  if (type === "turn.completed") {
+    return activityNode("Done", usageSummary(payload.usage), "activity-muted");
+  }
   if (type === "turn.failed") {
     return messageNode("Run failed", humanMessage(payload.error || payload), "notice");
   }
@@ -139,7 +264,7 @@ function renderEvent(event) {
     return renderItemEvent(type, payload.item || {});
   }
 
-  return activityNode(labelForType(type), summarizeObject(payload), "activity-muted", prettyJson(payload));
+  return activityNode(labelForType(type), summarizeObject(payload), "activity-muted");
 }
 
 function renderItemEvent(type, item) {
@@ -148,19 +273,39 @@ function renderItemEvent(type, item) {
   const text = extractItemText(item);
 
   if (isAssistantMessage(item)) {
-    return messageNode("Codex", text || "(empty response)", "assistant-message");
+    return messageNode("Answer", text || "(empty response)", "assistant-message");
   }
 
   if (itemType === "reasoning") {
-    return activityNode("Thinking", text || (complete ? "Reasoning finished" : "Reasoning"), "activity-muted");
+    return activityNode(
+      "Thinking",
+      conciseText(text || (complete ? "Reasoning finished" : "Reasoning")),
+      "activity-muted",
+    );
   }
 
   if (isToolItem(itemType)) {
     const label = complete ? "Tool finished" : "Tool started";
-    return activityNode(label, toolSummary(item), "activity-tool", text || prettyJson(item));
+    return activityNode(label, toolSummary(item), "activity-tool", toolDetails(item));
   }
 
-  return activityNode(labelForType(itemType), text || summarizeObject(item), "activity-muted", prettyJson(item));
+  return activityNode(labelForType(itemType), conciseText(text || summarizeObject(item)), "activity-muted");
+}
+
+function renderBackupEvent(type, payload) {
+  if (type === "backup.started") {
+    return activityNode("Backup", `Creating ${payload.name || "pre-change backup"}`, "activity-tool");
+  }
+  if (type === "backup.completed") {
+    return activityNode("Backup", `Created ${payload.slug || payload.name || "backup"}`, "activity-tool");
+  }
+  if (type === "backup.reused") {
+    return activityNode("Backup", `Using existing ${payload.slug || payload.name || "backup"}`, "activity-muted");
+  }
+  if (type === "backup.failed") {
+    return messageNode("Backup failed", humanMessage(payload), "notice");
+  }
+  return activityNode("Backup", summarizeObject(payload), "activity-muted");
 }
 
 function isAssistantMessage(item) {
@@ -187,6 +332,7 @@ function extractItemText(item) {
   if (typeof item.text === "string") return item.text;
   if (typeof item.output === "string") return item.output;
   if (typeof item.result === "string") return item.result;
+  if (typeof item.aggregated_output === "string") return item.aggregated_output;
   return extractContentText(item.content) || extractContentText(item.summary);
 }
 
@@ -206,14 +352,15 @@ function extractContentText(content) {
 function messageNode(title, text, className) {
   const article = document.createElement("article");
   article.className = `message ${className}`;
+  article.dataset.messageKey = normalizeMessage(text);
 
   const header = document.createElement("div");
   header.className = "message-title";
   header.textContent = title;
 
   const body = document.createElement("div");
-  body.className = "message-body";
-  body.textContent = cleanTerminalText(text);
+  body.className = "message-body markdown-body";
+  body.innerHTML = renderMarkdown(text);
 
   article.append(header, body);
   return article;
@@ -266,6 +413,10 @@ function shortId(value) {
   return text.length > 16 ? `${text.slice(0, 8)}…${text.slice(-6)}` : text;
 }
 
+function normalizeMessage(value) {
+  return cleanTerminalText(value).replace(/\s+/g, " ").trim();
+}
+
 function humanMessage(value) {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object") return String(value || "");
@@ -279,26 +430,56 @@ function summarizeObject(value) {
   if (value.status) return String(value.status);
   return Object.entries(value)
     .slice(0, 4)
-    .map(([key, item]) => `${key}: ${typeof item === "object" ? JSON.stringify(item) : item}`)
+    .map(([key, item]) => `${key}: ${typeof item === "object" ? summarizeObject(item) : item}`)
     .join(" · ");
 }
 
 function toolSummary(item) {
-  return item.name || item.command || item.tool || item.type || "Tool call";
+  if (item.command) return `Shell: ${conciseText(item.command, 160)}`;
+  if (item.name) return conciseText(item.name, 160);
+  if (item.tool) return conciseText(item.tool, 160);
+  return labelForType(item.type || "tool call");
 }
 
-function prettyJson(value) {
-  return JSON.stringify(value, null, 2);
+function toolDetails(item) {
+  const parts = [];
+  if (item.command) parts.push(`Command\n${cleanTerminalText(item.command)}`);
+  if (item.name && !item.command) parts.push(`Tool\n${cleanTerminalText(item.name)}`);
+  if (item.tool && !item.name) parts.push(`Tool\n${cleanTerminalText(item.tool)}`);
+  const output = item.aggregated_output || item.output || item.result;
+  if (typeof output === "string" && output.trim()) {
+    parts.push(`Output\n${cleanTerminalText(output)}`);
+  }
+  if (item.exit_code !== undefined && item.exit_code !== null) {
+    parts.push(`Exit code\n${item.exit_code}`);
+  }
+  if (item.status) parts.push(`Status\n${item.status}`);
+  return parts.join("\n\n");
+}
+
+function conciseText(value, maxLength = 220) {
+  const text = cleanTerminalText(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function usageSummary(usage) {
+  if (!usage || typeof usage !== "object") return "Completed";
+  const input = usage.input_tokens ?? usage.total_input_tokens;
+  const output = usage.output_tokens ?? usage.total_output_tokens;
+  if (input && output) return `${input.toLocaleString()} input tokens · ${output.toLocaleString()} output tokens`;
+  return "Completed";
 }
 
 function appendFinalAnswer(run) {
   if (!run.final_message) return;
-  const existing = [...document.querySelectorAll(".assistant-message .message-body")].some(
-    (node) => node.textContent.trim() === run.final_message.trim(),
+  const normalized = normalizeMessage(run.final_message);
+  const existing = [...document.querySelectorAll(".assistant-message")].some(
+    (node) => node.dataset.messageKey === normalized,
   );
   if (existing || document.querySelector(`[data-final-for="${run.id}"]`)) return;
 
-  const final = messageNode("Codex", run.final_message, "assistant-message");
+  const final = messageNode("Answer", run.final_message, "assistant-message");
   final.dataset.finalFor = run.id;
   $("runOutput").appendChild(final);
 }

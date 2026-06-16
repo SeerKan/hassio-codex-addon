@@ -20,6 +20,31 @@ def test_apply_prompt_is_medium_without_approval() -> None:
 
     assert assessment.level == "medium"
     assert assessment.approval_required is False
+    assert assessment.configuration_change is True
+
+
+def test_apply_entity_control_is_not_configuration_change() -> None:
+    assessment = classify_prompt("Turn on the kitchen lights", "apply")
+
+    assert assessment.level == "medium"
+    assert assessment.approval_required is False
+    assert assessment.configuration_change is False
+
+
+def test_apply_climate_control_is_not_configuration_change() -> None:
+    assessment = classify_prompt("Set the hallway thermostat to 21", "apply")
+
+    assert assessment.level == "medium"
+    assert assessment.approval_required is False
+    assert assessment.configuration_change is False
+
+
+def test_apply_automation_edit_is_configuration_change() -> None:
+    assessment = classify_prompt("Create an automation for the hallway light", "apply")
+
+    assert assessment.level == "medium"
+    assert assessment.approval_required is False
+    assert assessment.configuration_change is True
 
 
 def test_destructive_prompt_requires_approval() -> None:

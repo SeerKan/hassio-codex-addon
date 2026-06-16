@@ -41,8 +41,10 @@ through Home Assistant ingress only.
 ## Backups
 
 When `create_backup_before_first_change` is enabled, the add-on creates a full
-Supervisor backup before the first apply-mode or full-auto change. The backup is
-created once for the add-on installation and the slug is stored in `/data`.
+Supervisor backup before the first configuration-changing apply-mode or
+full-auto run. Runtime entity-control requests do not create a backup. The
+backup is created once for the add-on installation and the slug is stored in
+`/data`.
 
 If the backup fails, the run is blocked.
 

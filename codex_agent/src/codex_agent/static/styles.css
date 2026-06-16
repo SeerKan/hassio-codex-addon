@@ -304,8 +304,81 @@ h2 {
   padding: 8px 12px 12px;
   color: var(--text);
   line-height: 1.55;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre {
+  margin: 0 0 10px;
+}
+
+.markdown-body :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+}
+
+.markdown-body li + li {
+  margin-top: 4px;
+}
+
+.markdown-body strong {
+  color: #ffffff;
+  font-weight: 850;
+}
+
+.markdown-body em {
+  color: #dce7e2;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body code {
+  border: 1px solid rgba(51, 64, 71, 0.85);
+  border-radius: 5px;
+  background: rgba(9, 13, 14, 0.82);
+  padding: 1px 5px;
+  color: #e9f1ed;
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 0.9em;
+}
+
+.markdown-body pre {
+  overflow: auto;
+  border: 1px solid rgba(51, 64, 71, 0.85);
+  border-radius: 8px;
+  background: #090d0e;
+  padding: 10px;
+}
+
+.markdown-body pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+  color: var(--muted);
 }
 
 .activity {
@@ -316,7 +389,7 @@ h2 {
 
 .activity summary {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 118px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   min-height: 36px;

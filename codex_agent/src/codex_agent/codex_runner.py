@@ -34,6 +34,8 @@ LOCAL_CONTEXT_FILES = (
     Path("/homeassistant/ui-lovelace.yaml"),
 )
 MANAGED_CODEX_CONFIG = 'cli_auth_credentials_store = "file"\n'
+FIRST_CONFIG_BACKUP_STATE = "first_configuration_change_backup"
+LEGACY_FIRST_BACKUP_STATE = "first_change_backup"
 ANSI_ESCAPE_RE = re.compile(
     r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))"
 )
@@ -165,11 +167,26 @@ class CodexRunner:
 
         backup_slug = None
         backup_job_id = None
-        if mode == "apply" and self.settings.create_backup_before_first_change:
-            backup = await self._ensure_first_backup(run_id)
-            backup_slug = backup.get("slug")
-            backup_job_id = backup.get("job_id")
-            self.db.update_run(run_id, backup_slug=backup_slug, backup_job_id=backup_job_id)
+        if (
+            mode == "apply"
+            and assessment.configuration_change
+            and self.settings.create_backup_before_first_change
+        ):
+            try:
+                backup = await self._ensure_first_backup(run_id)
+                backup_slug = backup.get("slug")
+                backup_job_id = backup.get("job_id")
+                self.db.update_run(run_id, backup_slug=backup_slug, backup_job_id=backup_job_id)
+            except Exception as exc:
+                message = f"Unable to create required pre-configuration-change backup: {exc}"
+                self.db.add_event(run_id, "backup.failed", {"error": message})
+                self.db.update_run(
+                    run_id,
+                    status="failed",
+                    completed_at=utcnow(),
+                    error=message,
+                )
+                raise RuntimeError(message) from exc
 
         ha_context = await self.ha.context()
         ha_context["local"] = self._local_context()
@@ -193,15 +210,20 @@ class CodexRunner:
         return run_id
 
     async def _ensure_first_backup(self, run_id: str) -> dict[str, Any]:
-        existing = self.db.get_state("first_change_backup")
+        existing = self.db.get_state(FIRST_CONFIG_BACKUP_STATE) or self.db.get_state(
+            LEGACY_FIRST_BACKUP_STATE
+        )
         if existing:
             self.db.add_event(run_id, "backup.reused", existing)
             return existing
 
-        name = f"Codex Agent pre-change {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        name = (
+            "Codex Agent pre-configuration-change "
+            f"{datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
         self.db.add_event(run_id, "backup.started", {"name": name})
         backup = await self.ha.create_full_backup(name)
-        self.db.set_state("first_change_backup", backup)
+        self.db.set_state(FIRST_CONFIG_BACKUP_STATE, backup)
         self.db.add_event(run_id, "backup.completed", backup)
         return backup
 
