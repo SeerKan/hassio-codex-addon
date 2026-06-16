@@ -30,7 +30,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Home Assistant Codex Agent", version="0.1.8", lifespan=lifespan)
+app = FastAPI(title="Home Assistant Codex Agent", version="0.1.9", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -50,10 +50,16 @@ class RunRequest(BaseModel):
     approved: bool = False
     yolo: bool = False
     secret_access_approved: bool = False
+    session_id: str | None = None
+    create_new_session: bool = False
 
 
 class ImportAuthRequest(BaseModel):
     auth_json: str = Field(min_length=2, max_length=200_000)
+
+
+class SessionCreateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=128)
 
 
 def current_user(request: Request) -> UserContext:
@@ -79,6 +85,9 @@ async def health() -> dict[str, str]:
 async def status(user: UserDep) -> dict:
     auth = runner.auth_status(user)
     ha_context = await runner.ha.context()
+    sessions = db.list_sessions(user.user_id, limit=40)
+    active_session_id = sessions[0]["id"] if sessions else None
+    recent_runs = db.list_runs(user.user_id, limit=10, session_id=active_session_id)
     return {
         "user": {
             "id": user.user_id,
@@ -88,7 +97,9 @@ async def status(user: UserDep) -> dict:
         "auth": auth,
         "settings": settings.__dict__,
         "home_assistant": ha_context,
-        "runs": db.list_runs(user.user_id, limit=10),
+        "active_session_id": active_session_id,
+        "sessions": sessions,
+        "runs": recent_runs,
     }
 
 
@@ -149,7 +160,9 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
             user,
             payload.prompt,
             payload.mode,
+            None if payload.create_new_session else payload.session_id,
             assessment,
+            create_new_session=payload.create_new_session,
             approved=payload.approved,
             yolo=payload.yolo,
             secret_access_approved=payload.secret_access_approved,
@@ -161,8 +174,22 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
 
 
 @app.get("/api/runs")
-async def list_runs(user: UserDep) -> dict:
-    return {"runs": db.list_runs(user.user_id)}
+async def list_runs(user: UserDep, session_id: str | None = None) -> dict:
+    return {"runs": db.list_runs(user.user_id, session_id=session_id)}
+
+
+@app.get("/api/sessions")
+async def list_sessions(user: UserDep) -> dict:
+    return {"sessions": db.list_sessions(user.user_id)}
+
+
+@app.post("/api/sessions")
+async def create_session(payload: SessionCreateRequest, user: UserDep) -> dict:
+    title = payload.title.strip() if payload.title else "Session"
+    if not title:
+        title = "Session"
+    session_id = db.create_session(user.user_id, title)
+    return {"session_id": session_id}
 
 
 @app.get("/api/runs/{run_id}")

@@ -45,6 +45,10 @@ DEVICE_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b")
 
 
 class CodexRunner:
+    SESSION_CONTEXT_LIMIT = 8
+    SESSION_TITLE_MAX = 64
+    SESSION_CONTEXT_MAX_CHARS = 2800
+
     def __init__(self, db: Database, settings: Settings) -> None:
         self.db = db
         self.settings = settings
@@ -139,8 +143,10 @@ class CodexRunner:
         user: UserContext,
         prompt: str,
         mode: str,
+        session_id: str | None,
         assessment: RiskAssessment,
         *,
+        create_new_session: bool = False,
         approved: bool,
         yolo: bool,
         secret_access_approved: bool,
@@ -148,11 +154,25 @@ class CodexRunner:
         if shutil.which("codex") is None:
             raise RuntimeError("codex CLI is not installed in this image.")
         home = self.ensure_user_home(user)
+
+        resolved_session_id = self._resolve_session(
+            user=user,
+            session_id=session_id,
+            force_new=create_new_session,
+            prompt=prompt,
+        )
+        session_history = self.db.list_session_context(
+            resolved_session_id,
+            user.user_id,
+            limit=self.SESSION_CONTEXT_LIMIT,
+        )
+
         run_id = str(uuid.uuid4())
         self.db.create_run(
             {
                 "id": run_id,
                 "user_id": user.user_id,
+                "session_id": resolved_session_id,
                 "prompt": prompt,
                 "mode": mode,
                 "status": "queued",
@@ -164,6 +184,7 @@ class CodexRunner:
                 "started_at": utcnow(),
             }
         )
+        self.db.update_session(resolved_session_id, user.user_id, title=self._session_title(prompt))
 
         backup_slug = None
         backup_job_id = None
@@ -198,6 +219,8 @@ class CodexRunner:
                 home,
                 prompt,
                 mode,
+                resolved_session_id,
+                session_history,
                 assessment,
                 ha_context,
                 yolo,
@@ -234,6 +257,8 @@ class CodexRunner:
         home: Path,
         prompt: str,
         mode: str,
+        session_id: str,
+        session_history: list[dict[str, Any]],
         assessment: RiskAssessment,
         ha_context: dict[str, Any],
         yolo: bool,
@@ -250,6 +275,8 @@ class CodexRunner:
             user=user,
             prompt=prompt,
             mode=mode,
+            session_id=session_id,
+            session_history=session_history,
             assessment=assessment,
             ha_context=ha_context,
             secret_access_approved=secret_access_approved,
@@ -345,6 +372,8 @@ class CodexRunner:
         user: UserContext,
         prompt: str,
         mode: str,
+        session_id: str,
+        session_history: list[dict[str, Any]],
         assessment: RiskAssessment,
         ha_context: dict[str, Any],
         secret_access_approved: bool,
@@ -354,6 +383,8 @@ class CodexRunner:
             "propose": "Propose an exact plan or patch. Do not modify files.",
             "apply": "Apply the requested change with minimal scope, then summarize what changed.",
         }[mode]
+
+        session_context = self._render_session_context(session_history)
         return f"""
 You are Codex running inside the Home Assistant Codex Agent add-on.
 
@@ -400,6 +431,13 @@ Operational rules:
   only from the global entity registry.
 - If SUPERVISOR_TOKEN is missing, do not send an Authorization header with an
   empty bearer token.
+
+Current session: {session_id}
+
+Recent session context:
+{session_context}
+
+Unless explicitly asked otherwise, continue from the thread above.
 - Codex's internal Linux sandbox is disabled in this add-on because Home
   Assistant OS add-on containers do not allow the bubblewrap namespace setup it
   needs. Treat the selected mode as mandatory: ask/propose must not modify
@@ -408,6 +446,63 @@ Operational rules:
 User request:
 {prompt}
 """.strip()
+
+    def _resolve_session(
+        self,
+        user: UserContext,
+        *,
+        session_id: str | None,
+        force_new: bool,
+        prompt: str,
+    ) -> str:
+        if force_new:
+            return self.db.create_session(user.user_id, self._session_title(prompt))
+
+        if session_id:
+            existing = self.db.get_session(session_id, user.user_id)
+            if existing:
+                return session_id
+
+        latest = self.db.latest_session_id(user.user_id)
+        if latest:
+            return latest
+
+        return self.db.create_session(user.user_id, self._session_title(prompt))
+
+    def _session_title(self, prompt: str) -> str:
+        stripped = prompt.strip().replace("\n", " ")
+        if not stripped:
+            return "Session"
+        title = stripped[: self.SESSION_TITLE_MAX].strip()
+        if len(stripped) > self.SESSION_TITLE_MAX:
+            title = f"{title[:-1]}…"
+        return title or "Session"
+
+    def _render_session_context(self, session_history: list[dict[str, Any]]) -> str:
+        if not session_history:
+            return "No prior context in this session."
+
+        lines: list[str] = []
+        for item in reversed(session_history):
+            user_request = self._clean_for_prompt(item.get("prompt", ""))
+            assistant_reply = self._clean_for_prompt(item.get("final_message", ""))
+            if not assistant_reply:
+                assistant_reply = "[No completed response yet]"
+            lines.append(f"User: {self._truncate_for_prompt(user_request, 360)}")
+            lines.append(f"Assistant: {self._truncate_for_prompt(assistant_reply, 520)}")
+            lines.append("")
+        return self._truncate_for_prompt("\n".join(lines).strip(), self.SESSION_CONTEXT_MAX_CHARS)
+
+    def _clean_for_prompt(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return ""
+        return " ".join(value.split())
+
+    def _truncate_for_prompt(self, value: str, max_length: int) -> str:
+        if len(value) <= max_length:
+            return value
+        truncated = value[: max_length - 1].rstrip()
+        return f"{truncated}…"
 
     def _env(self, home: Path) -> dict[str, str]:
         env = os.environ.copy()

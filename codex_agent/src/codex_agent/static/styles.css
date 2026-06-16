@@ -198,6 +198,23 @@ h2 {
   font-size: 14px;
 }
 
+.session-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+#sessionSelect {
+  min-width: 0;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1113;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
 .check-row input {
   width: 18px;
   height: 18px;
@@ -499,13 +516,26 @@ textarea:focus {
   border-radius: 8px;
   background: var(--surface-2);
   padding: 10px 12px;
+  min-width: 0;
+}
+
+.run-card-body {
+  min-width: 0;
 }
 
 .run-card strong {
   display: block;
+}
+
+.run-prompt {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 2.55em;
+  word-break: break-word;
 }
 
 .run-card span {

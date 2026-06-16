@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codex Agent</title>
-    <link rel="stylesheet" href="static/styles.css?v=0.1.8" />
+    <link rel="stylesheet" href="static/styles.css?v=0.1.9" />
   </head>
   <body>
     <main class="shell">
@@ -44,6 +44,14 @@
             <button class="mode" data-mode="propose">Propose</button>
             <button class="mode" data-mode="apply">Apply</button>
           </div>
+
+          <label class="check-row">
+            <span class="eyebrow">Session</span>
+            <div class="session-controls">
+              <select id="sessionSelect"></select>
+              <button id="newSession" class="secondary" type="button">New session</button>
+            </div>
+          </label>
 
           <label class="check-row">
             <input id="secretApproved" type="checkbox" />
@@ -101,6 +109,6 @@
       </section>
     </main>
 
-    <script src="static/app.js?v=0.1.8" type="module"></script>
+    <script src="static/app.js?v=0.1.9" type="module"></script>
   </body>
 </html>

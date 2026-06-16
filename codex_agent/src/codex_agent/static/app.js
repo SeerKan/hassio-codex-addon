@@ -1,10 +1,14 @@
 const state = {
   mode: "ask",
+  activeSessionId: null,
   pendingApproval: null,
   activeRunId: null,
   lastEventId: 0,
   pollTimer: null,
+  sessions: [],
 };
+
+const SESSION_STORAGE_KEY = "codex_session_id";
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,6 +32,15 @@ function setText(id, value) {
   $(id).textContent = value;
 }
 
+function resolveSessionId(payload) {
+  const persisted = localStorage.getItem(SESSION_STORAGE_KEY);
+  const sessions = payload.sessions || [];
+  if (persisted && sessions.some((session) => session.id === persisted)) {
+    return persisted;
+  }
+  return payload.active_session_id;
+}
+
 function renderStatus(payload) {
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
@@ -45,7 +58,24 @@ function renderStatus(payload) {
   const version = core.version || coreConfig.version || "unknown";
   setText("haVersion", `HA ${version}`);
   $("authPanel").hidden = Boolean(payload.auth.configured);
-  renderRuns(payload.runs || []);
+
+  state.sessions = payload.sessions || [];
+  state.activeSessionId = resolveSessionId(payload);
+  renderSessions();
+
+  if (!state.activeSessionId && state.sessions.length) {
+    state.activeSessionId = state.sessions[0].id;
+  }
+
+  if (state.activeSessionId) {
+    if (payload.runs && payload.runs.length !== undefined) {
+      renderRuns(payload.runs);
+    } else {
+      refreshSessionRuns();
+    }
+  } else {
+    renderRuns([]);
+  }
 }
 
 function renderRuns(runs) {
@@ -56,12 +86,14 @@ function renderRuns(runs) {
     return;
   }
   for (const run of runs) {
+    const preview = conciseText(run.prompt, 160);
     const card = document.createElement("button");
     card.className = "run-card";
     card.type = "button";
+    card.title = run.prompt;
     card.innerHTML = `
-      <div>
-        <strong>${escapeHtml(run.prompt)}</strong>
+      <div class="run-card-body">
+        <strong class="run-prompt">${escapeHtml(preview)}</strong>
         <span>${run.mode} · ${run.risk_level} · ${run.status}</span>
       </div>
       <span>${new Date(run.started_at).toLocaleString()}</span>
@@ -69,6 +101,39 @@ function renderRuns(runs) {
     card.addEventListener("click", () => loadRun(run.id, true));
     list.appendChild(card);
   }
+}
+
+function renderSessions() {
+  const select = $("sessionSelect");
+  if (!select) return;
+
+  select.innerHTML = "";
+  if (!state.sessions.length) {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "No sessions";
+    select.appendChild(empty);
+    select.value = "";
+    select.disabled = true;
+    state.activeSessionId = null;
+    return;
+  }
+
+  select.disabled = false;
+  for (const session of state.sessions) {
+    const option = document.createElement("option");
+    option.value = session.id;
+    option.textContent = `${session.title} (${session.run_count})`;
+    option.title = session.last_prompt || "";
+    select.appendChild(option);
+  }
+
+  if (!state.activeSessionId || !state.sessions.some((session) => session.id === state.activeSessionId)) {
+    state.activeSessionId = state.sessions[0].id;
+  }
+
+  select.value = state.activeSessionId;
+  localStorage.setItem(SESSION_STORAGE_KEY, state.activeSessionId);
 }
 
 function escapeHtml(value) {
@@ -543,6 +608,42 @@ async function loadStatus() {
   renderStatus(payload);
 }
 
+async function refreshSessionRuns() {
+  if (!state.activeSessionId) {
+    renderRuns([]);
+    return;
+  }
+
+  const query = `api/runs?session_id=${encodeURIComponent(state.activeSessionId)}`;
+  const payload = await api(query);
+  renderRuns(payload.runs || []);
+}
+
+function activateSession(sessionId) {
+  if (!sessionId) {
+    state.activeSessionId = null;
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    renderRuns([]);
+    return;
+  }
+
+  state.activeSessionId = sessionId;
+  localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  if ($("sessionSelect")) {
+    $("sessionSelect").value = sessionId;
+  }
+}
+
+async function startNewSession() {
+  const payload = await api("api/sessions", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  await loadStatus();
+  activateSession(payload.session_id);
+  renderRuns([]);
+}
+
 async function loadRun(runId, reset = false) {
   const payload = await api(`api/runs/${runId}?after_event_id=${reset ? 0 : state.lastEventId}`);
   state.activeRunId = runId;
@@ -575,6 +676,8 @@ async function submitRun(approved = false) {
     approved,
     yolo: $("yolo").checked,
     secret_access_approved: $("secretApproved").checked,
+    session_id: state.activeSessionId,
+    create_new_session: false,
   };
 
   $("approvalBox").hidden = true;
@@ -696,6 +799,15 @@ function bind() {
     });
     $("authJson").value = "";
     await loadStatus();
+  });
+  $("sessionSelect").addEventListener("change", async (event) => {
+    const sessionId = event.target.value || null;
+    activateSession(sessionId);
+    await refreshSessionRuns();
+    $("runOutput").innerHTML = `<div class="empty-state"><h2>Conversation selected</h2><p>Select a run from this session or start a new one.</p></div>`;
+  });
+  $("newSession").addEventListener("click", async () => {
+    await startNewSession();
   });
   $("refreshRuns").addEventListener("click", loadStatus);
 }

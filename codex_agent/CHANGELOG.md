@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9
+
+- Add user-scoped conversation sessions so follow-up runs stay in the same context.
+- Keep only concise recent run previews in the Recent runs list to prevent long prompt layout breaks.
+- Improve session-aware history selection and expose active session switching in sidebar UI.
+
 ## 0.1.8
 
 - Transform run events server-side into safe, human-readable summaries.

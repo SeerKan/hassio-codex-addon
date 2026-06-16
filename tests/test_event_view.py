@@ -29,7 +29,7 @@ def test_tool_execution_event_is_human_summary() -> None:
     rendered = display_events([event])[0]
 
     assert rendered["type"] == "Tool finished"
-    assert "Tool finished" in rendered["payload"]
+    assert "Home Assistant API request completed" in rendered["payload"]
     assert "json" not in rendered["payload"].lower()
     assert "{\"result\"" not in rendered["display"]["details"]
     assert "Structured output omitted" in rendered["display"]["details"]

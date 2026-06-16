@@ -109,7 +109,9 @@ def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> No
             user,
             "Turn on the kitchen lights",
             "apply",
+            None,
             assessment,
+            create_new_session=False,
             approved=False,
             yolo=False,
             secret_access_approved=False,
@@ -141,7 +143,9 @@ def test_configuration_apply_creates_first_backup(tmp_path, monkeypatch) -> None
             user,
             "Add a dashboard card for the thermostat",
             "apply",
+            None,
             assessment,
+            create_new_session=False,
             approved=False,
             yolo=False,
             secret_access_approved=False,
@@ -152,6 +156,93 @@ def test_configuration_apply_creates_first_backup(tmp_path, monkeypatch) -> None
     run = db.get_run(run_id)
     assert run["backup_slug"] == "backup-config"
     assert run["backup_job_id"] == "job-1"
+
+
+def test_runs_use_existing_session_when_provided(tmp_path, monkeypatch) -> None:
+    runner, db = make_startable_runner(tmp_path, monkeypatch)
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    session_id = db.create_session(user.user_id, "Kitchen")
+    assessment = RiskAssessment(
+        level="medium",
+        approval_required=False,
+        configuration_change=False,
+    )
+
+    first = asyncio.run(
+        runner.start_run(
+            user,
+            "How many lights are on?",
+            "ask",
+            session_id,
+            assessment,
+            create_new_session=False,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+    second = asyncio.run(
+        runner.start_run(
+            user,
+            "And how many lights are off?",
+            "ask",
+            session_id,
+            assessment,
+            create_new_session=False,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+
+    assert db.get_run(first)["session_id"] == session_id
+    assert db.get_run(second)["session_id"] == session_id
+    assert len(db.list_runs(user.user_id, session_id=session_id)) == 2
+
+
+def test_create_new_session_forces_new_thread(tmp_path, monkeypatch) -> None:
+    runner, db = make_startable_runner(tmp_path, monkeypatch)
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    initial_session_id = db.create_session(user.user_id, "Kitchen")
+    assessment = RiskAssessment(
+        level="medium",
+        approval_required=False,
+        configuration_change=False,
+    )
+
+    first = asyncio.run(
+        runner.start_run(
+            user,
+            "Open dashboard entities",
+            "ask",
+            initial_session_id,
+            assessment,
+            create_new_session=True,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+    second = asyncio.run(
+        runner.start_run(
+            user,
+            "Now check automations",
+            "ask",
+            db.get_run(first)["session_id"],
+            assessment,
+            create_new_session=True,
+            approved=False,
+            yolo=False,
+            secret_access_approved=False,
+        )
+    )
+
+    assert db.get_run(first)["session_id"] != initial_session_id
+    assert db.get_run(second)["session_id"] != initial_session_id
+    assert db.get_run(second)["session_id"] != db.get_run(first)["session_id"]
+    assert len(db.list_runs(user.user_id, session_id=initial_session_id)) == 0
+    assert len(db.list_runs(user.user_id, session_id=db.get_run(first)["session_id"])) == 1
+    assert len(db.list_runs(user.user_id, session_id=db.get_run(second)["session_id"])) == 1
 
 
 def test_ensure_user_home_repairs_old_managed_config(tmp_path, monkeypatch) -> None:
