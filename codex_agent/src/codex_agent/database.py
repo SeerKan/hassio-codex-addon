@@ -175,7 +175,21 @@ class Database:
                         WHERE r.session_id = s.id
                         ORDER BY r.started_at DESC
                         LIMIT 1
-                    ) AS last_prompt
+                    ) AS last_prompt,
+                    (
+                        SELECT r.id
+                        FROM runs r
+                        WHERE r.session_id = s.id
+                        ORDER BY r.started_at DESC
+                        LIMIT 1
+                    ) AS last_run_id,
+                    (
+                        SELECT r.status
+                        FROM runs r
+                        WHERE r.session_id = s.id
+                        ORDER BY r.started_at DESC
+                        LIMIT 1
+                    ) AS last_status
                 FROM sessions s
                 WHERE s.user_id = ?
                 ORDER BY s.updated_at DESC
@@ -271,16 +285,18 @@ class Database:
         user_id: str,
         limit: int = 20,
         session_id: str | None = None,
+        order: str = "desc",
     ) -> list[dict[str, Any]]:
         clauses = ["user_id = ?"]
         values: list[Any] = [user_id]
         if session_id:
             clauses.append("session_id = ?")
             values.append(session_id)
+        direction = "ASC" if order.lower() == "asc" else "DESC"
         query = (
             "SELECT * FROM runs WHERE "
             + " AND ".join(clauses)
-            + " ORDER BY started_at DESC LIMIT ?"
+            + f" ORDER BY started_at {direction} LIMIT ?"
         )
         values.append(limit)
 

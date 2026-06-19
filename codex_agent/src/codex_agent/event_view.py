@@ -21,7 +21,7 @@ def display_event(event: dict[str, Any]) -> dict[str, Any]:
     event_type = _event_key(event.get("type") or "event")
 
     if event_type == "codex.command":
-        return _compose(event, "Run started", _command_summary(payload), kind="activity")
+        return _compose(event, "Request started", _command_summary(payload), kind="activity")
 
     if event_type in {"codex.stderr", "codex.error"}:
         message = _human_message(payload)
@@ -68,7 +68,7 @@ def display_event(event: dict[str, Any]) -> dict[str, Any]:
 
     if inner_type in {"turn.failed", "error"}:
         message = _human_message(payload)
-        return _compose(event, "Run failed", message, kind="message")
+        return _compose(event, "Request failed", message, kind="message")
 
     return _compose(event, _label(inner_type), _human_message(payload))
 

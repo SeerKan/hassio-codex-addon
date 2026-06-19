@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.15
+
+- Replace the Recent runs surface with a Sessions list.
+- Keep session conversations in the chat so follow-up messages retain context.
+- Clear the composer immediately after Send and show startup feedback in the chat.
+- Generate topic-focused session titles instead of copying the first prompt.
+
 ## 0.1.14
 
 - Stop clearing origin-wide browser caches from the ingress page.

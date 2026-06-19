@@ -253,32 +253,6 @@ h2 {
   font-size: 14px;
 }
 
-.session-controls {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.session-row {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-#sessionSelect {
-  width: 100%;
-  min-width: 0;
-  min-height: 42px;
-  appearance: none;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #0d1113;
-  color: var(--text);
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
 .check-row input {
   width: 18px;
   height: 18px;
@@ -441,6 +415,15 @@ h2 {
 .assistant-message {
   border-color: rgba(72, 198, 169, 0.4);
   background: rgba(72, 198, 169, 0.08);
+}
+
+.user-message {
+  border-color: rgba(245, 193, 92, 0.36);
+  background: rgba(245, 193, 92, 0.07);
+}
+
+.user-message .message-title {
+  color: var(--accent-2);
 }
 
 .notice {
@@ -686,7 +669,14 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
-.runs-list {
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
+.sessions-list {
   display: grid;
   gap: 8px;
   width: 100%;
@@ -695,7 +685,7 @@ textarea:focus {
   overflow: hidden;
 }
 
-.run-card {
+.session-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
@@ -714,7 +704,16 @@ textarea:focus {
   text-align: left;
 }
 
-.run-card-body {
+.session-card:hover,
+.session-card.active {
+  border-color: rgba(72, 198, 169, 0.62);
+}
+
+.session-card.active {
+  background: rgba(72, 198, 169, 0.1);
+}
+
+.session-card-body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -724,16 +723,16 @@ textarea:focus {
   gap: 4px;
 }
 
-.run-card * {
+.session-card * {
   min-width: 0;
   max-width: 100%;
 }
 
-.run-card strong {
+.session-card strong {
   display: block;
 }
 
-.run-prompt {
+.session-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -746,12 +745,13 @@ textarea:focus {
   word-break: break-word;
 }
 
-.run-card span {
+.session-card span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.run-meta {
+.session-meta,
+.session-preview {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -760,12 +760,11 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
-.run-time {
-  display: inline;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.session-preview {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
 .login-output {

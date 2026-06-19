@@ -42,6 +42,87 @@ ANSI_ESCAPE_RE = re.compile(
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 DEVICE_URL_RE = re.compile(r"https://[^\s]+")
 DEVICE_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b")
+TITLE_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
+TITLE_STOP_WORDS = {
+    "about",
+    "again",
+    "all",
+    "also",
+    "and",
+    "any",
+    "are",
+    "ask",
+    "but",
+    "couple",
+    "can",
+    "change",
+    "check",
+    "codex",
+    "could",
+    "create",
+    "does",
+    "for",
+    "from",
+    "have",
+    "home",
+    "assistant",
+    "how",
+    "into",
+    "just",
+    "like",
+    "make",
+    "max",
+    "need",
+    "off",
+    "one",
+    "only",
+    "now",
+    "please",
+    "second",
+    "show",
+    "should",
+    "since",
+    "something",
+    "tell",
+    "that",
+    "the",
+    "then",
+    "there",
+    "this",
+    "use",
+    "used",
+    "want",
+    "what",
+    "when",
+    "will",
+    "with",
+    "would",
+    "you",
+}
+TITLE_TOKEN_ALIASES = {
+    "sceen": "scenes",
+    "sceens": "scenes",
+    "screenes": "scenes",
+}
+TITLE_DOMAIN_WORDS = {
+    "automation",
+    "automations",
+    "camera",
+    "card",
+    "dashboard",
+    "entity",
+    "entities",
+    "light",
+    "lights",
+    "scene",
+    "scenes",
+    "script",
+    "scripts",
+    "sensor",
+    "sensors",
+    "switch",
+    "thermostat",
+}
 
 
 class CodexRunner:
@@ -185,7 +266,11 @@ class CodexRunner:
                 "started_at": utcnow(),
             }
         )
-        self.db.update_session(resolved_session_id, user.user_id, title=self._session_title(prompt))
+        self.db.update_session(
+            resolved_session_id,
+            user.user_id,
+            title=self._session_title(prompt, session_history),
+        )
 
         backup_slug = None
         backup_job_id = None
@@ -480,14 +565,54 @@ User request:
 
         return self.db.create_session(user.user_id, self._session_title(prompt))
 
-    def _session_title(self, prompt: str) -> str:
-        stripped = prompt.strip().replace("\n", " ")
-        if not stripped:
-            return "Session"
-        title = stripped[: self.SESSION_TITLE_MAX].strip()
-        if len(stripped) > self.SESSION_TITLE_MAX:
-            title = f"{title[:-1]}…"
+    def _session_title(
+        self,
+        prompt: str,
+        session_history: list[dict[str, Any]] | None = None,
+    ) -> str:
+        prompts = [self._clean_for_prompt(item.get("prompt", "")) for item in session_history or []]
+        prompts = [item for item in reversed(prompts) if item]
+        prompts.append(self._clean_for_prompt(prompt))
+        tokens: dict[str, dict[str, Any]] = {}
+
+        for index, raw_token in enumerate(TITLE_TOKEN_RE.findall(" ".join(prompts).lower())):
+            token = self._title_token(raw_token)
+            if not token or token in TITLE_STOP_WORDS:
+                continue
+            entry = tokens.setdefault(token, {"count": 0, "first": index})
+            entry["count"] += 1
+
+        if tokens:
+            ranked = sorted(
+                tokens.items(),
+                key=lambda item: (
+                    -(item[1]["count"] * 4 + (3 if item[0] in TITLE_DOMAIN_WORDS else 0)),
+                    item[1]["first"],
+                ),
+            )[:6]
+            ordered = sorted(ranked, key=lambda item: item[1]["first"])
+            title = " ".join(self._title_word(token) for token, _meta in ordered)
+        else:
+            title = self._clean_for_prompt(prompt)
+
+        if len(title) > self.SESSION_TITLE_MAX:
+            title = f"{title[: self.SESSION_TITLE_MAX - 1].rstrip()}…"
         return title or "Session"
+
+    @staticmethod
+    def _title_token(value: str) -> str:
+        token = TITLE_TOKEN_ALIASES.get(value, value)
+        if len(token) < 3 or token.isdigit() or re.fullmatch(r"\d+(st|nd|rd|th)", token):
+            return ""
+        return token
+
+    @staticmethod
+    def _title_word(value: str) -> str:
+        known = {
+            "ha": "HA",
+            "yaml": "YAML",
+        }
+        return known.get(value, value.capitalize())
 
     def _render_session_context(self, session_history: list[dict[str, Any]]) -> str:
         if not session_history:

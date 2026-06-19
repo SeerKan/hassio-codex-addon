@@ -24,3 +24,15 @@ def test_sidebar_has_ingress_base_and_model_fallbacks() -> None:
     assert "__MODEL_OPTIONS__" in index
     assert "FALLBACK_MODEL_OPTIONS" in app
     assert "document.baseURI" in app
+
+
+def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:
+    index = (ROOT / "codex_agent/src/codex_agent/static/index.html").read_text(encoding="utf-8")
+    app = (ROOT / "codex_agent/src/codex_agent/static/app.js").read_text(encoding="utf-8")
+
+    assert "Recent runs" not in index
+    assert "sessionSelect" not in index
+    assert "runsList" not in index
+    assert 'id="sessionsList"' in index
+    assert "renderSessionsList" in app
+    assert "refreshSessionRuns" not in app

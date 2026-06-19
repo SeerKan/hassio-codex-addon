@@ -238,8 +238,21 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
 
 
 @app.get("/api/runs")
-async def list_runs(user: UserDep, session_id: str | None = None) -> dict:
-    return {"runs": db.list_runs(user.user_id, session_id=session_id)}
+async def list_runs(
+    user: UserDep,
+    session_id: str | None = None,
+    limit: int = 100,
+    order: Literal["asc", "desc"] = "desc",
+) -> dict:
+    safe_limit = max(1, min(limit, 200))
+    return {
+        "runs": db.list_runs(
+            user.user_id,
+            limit=safe_limit,
+            session_id=session_id,
+            order=order,
+        )
+    }
 
 
 @app.get("/api/sessions")

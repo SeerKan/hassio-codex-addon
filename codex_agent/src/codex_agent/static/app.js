@@ -1,8 +1,9 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.14";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.15";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
+const memoryStore = {};
 const FALLBACK_MODEL_OPTIONS = [
   {
     id: "gpt-5.5",
@@ -46,16 +47,45 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 function loadStoredChoice(key, fallback) {
+  if (memoryStore[key]) return memoryStore[key];
   try {
-    return localStorage.getItem(key) || fallback;
+    const value = sessionStorage.getItem(key);
+    if (value) return value;
   } catch {
-    return fallback;
+    // Storage can be unavailable in some embedded browser contexts.
   }
+  try {
+    const value = localStorage.getItem(key);
+    if (value) return value;
+  } catch {
+    // Storage can be unavailable in some embedded browser contexts.
+  }
+  return fallback;
 }
 
 function storeChoice(key, value) {
+  memoryStore[key] = value;
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in some embedded browser contexts.
+  }
   try {
     localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in some embedded browser contexts.
+  }
+}
+
+function removeStoredChoice(key) {
+  delete memoryStore[key];
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in some embedded browser contexts.
+  }
+  try {
+    localStorage.removeItem(key);
   } catch {
     // Storage can be unavailable in some embedded browser contexts.
   }
@@ -88,7 +118,7 @@ function setText(id, value) {
 }
 
 function resolveSessionId(payload) {
-  const persisted = localStorage.getItem(SESSION_STORAGE_KEY);
+  const persisted = loadStoredChoice(SESSION_STORAGE_KEY, "");
   if (persisted === DRAFT_SESSION_ID) {
     return DRAFT_SESSION_ID;
   }
@@ -96,10 +126,10 @@ function resolveSessionId(payload) {
   if (persisted && sessions.some((session) => session.id === persisted)) {
     return persisted;
   }
-  return payload.active_session_id;
+  return payload.active_session_id || sessions[0]?.id || DRAFT_SESSION_ID;
 }
 
-async function renderStatus(payload) {
+async function renderStatus(payload, { loadConversation = true } = {}) {
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
     setText("authState", payload.auth.auth_mode || "Codex");
@@ -121,51 +151,49 @@ async function renderStatus(payload) {
   state.sessions = payload.sessions || [];
   state.activeSessionId = resolveSessionId(payload);
   state.draftSession = state.activeSessionId === DRAFT_SESSION_ID;
-  renderSessions();
+  renderSessionsList();
 
-  if (!state.activeSessionId && state.sessions.length) {
-    state.activeSessionId = state.sessions[0].id;
-  }
-
-  if (state.draftSession) {
-    renderRuns([]);
-  } else if (state.activeSessionId) {
-    const runsSessionId = payload.runs_session_id || payload.active_session_id;
-    if (runsSessionId === state.activeSessionId && Array.isArray(payload.runs)) {
-      renderRuns(payload.runs);
-    } else {
-      await refreshSessionRuns();
-    }
+  if (!loadConversation) return;
+  if (state.draftSession || !state.activeSessionId) {
+    renderConversation([]);
   } else {
-    renderRuns([]);
+    await loadSessionConversation(state.activeSessionId);
   }
 }
 
-function renderRuns(runs) {
-  const list = $("runsList");
+function renderSessionsList() {
+  const list = $("sessionsList");
   list.innerHTML = "";
-  if (!runs.length) {
-    list.innerHTML = '<p class="muted">No runs yet.</p>';
+  if (!state.sessions.length) {
+    list.innerHTML = '<p class="muted">No sessions yet.</p>';
     return;
   }
-  for (const run of runs) {
-    const preview = conciseText(run.prompt, 96);
-    const started = new Date(run.started_at).toLocaleString();
+  for (const session of state.sessions) {
     const card = document.createElement("button");
-    card.className = "run-card";
+    card.className = "session-card";
+    card.classList.toggle("active", session.id === state.activeSessionId && !state.draftSession);
     card.type = "button";
-    card.title = run.prompt;
+    card.title = session.last_prompt || session.title;
     const body = document.createElement("span");
-    body.className = "run-card-body";
-    const prompt = document.createElement("strong");
-    prompt.className = "run-prompt";
-    prompt.textContent = preview || "(empty prompt)";
+    body.className = "session-card-body";
+    const title = document.createElement("strong");
+    title.className = "session-title";
+    title.textContent = session.title || "Session";
     const meta = document.createElement("span");
-    meta.className = "run-meta";
-    meta.textContent = `${run.mode} · ${run.risk_level} · ${run.status} · ${started}`;
-    body.append(prompt, meta);
+    meta.className = "session-meta";
+    const updated = new Date(session.updated_at).toLocaleString();
+    const count = Number(session.run_count || 0);
+    const status = session.last_status ? ` · ${session.last_status}` : "";
+    meta.textContent = `${count} ${count === 1 ? "message" : "messages"}${status} · ${updated}`;
+    body.append(title, meta);
+    if (session.last_prompt) {
+      const preview = document.createElement("span");
+      preview.className = "session-preview";
+      preview.textContent = conciseText(session.last_prompt, 140);
+      body.appendChild(preview);
+    }
     card.appendChild(body);
-    card.addEventListener("click", () => loadRun(run.id, true));
+    card.addEventListener("click", () => loadSessionConversation(session.id));
     list.appendChild(card);
   }
 }
@@ -195,50 +223,6 @@ function renderModelOptions(models) {
   select.disabled = options.length === 0;
   select.value = state.selectedModel;
   select.title = options.find((model) => model.id === state.selectedModel)?.description || "";
-}
-
-function renderSessions() {
-  const select = $("sessionSelect");
-  if (!select) return;
-
-  select.innerHTML = "";
-  if (state.draftSession) {
-    const draft = document.createElement("option");
-    draft.value = DRAFT_SESSION_ID;
-    draft.textContent = "New session";
-    draft.selected = true;
-    select.appendChild(draft);
-  }
-
-  if (!state.sessions.length && !state.draftSession) {
-    const empty = document.createElement("option");
-    empty.value = "";
-    empty.textContent = "No sessions";
-    select.appendChild(empty);
-    select.value = "";
-    select.disabled = true;
-    state.activeSessionId = null;
-    return;
-  }
-
-  select.disabled = false;
-  for (const session of state.sessions) {
-    const option = document.createElement("option");
-    option.value = session.id;
-    option.textContent = `${session.title} (${session.run_count})`;
-    option.title = session.last_prompt || "";
-    select.appendChild(option);
-  }
-
-  if (
-    !state.draftSession
-    && (!state.activeSessionId || !state.sessions.some((session) => session.id === state.activeSessionId))
-  ) {
-    state.activeSessionId = state.sessions[0].id;
-  }
-
-  select.value = state.activeSessionId;
-  localStorage.setItem(SESSION_STORAGE_KEY, state.activeSessionId);
 }
 
 function escapeHtml(value) {
@@ -481,7 +465,7 @@ function renderEvent(event) {
 
   if (eventType === "codex.command") {
     const argv = Array.isArray(payload.argv) ? payload.argv : [];
-    return activityNode("Run started", commandPreview(argv), "activity-muted", commandDetails(argv));
+    return activityNode("Request started", commandPreview(argv), "activity-muted", commandDetails(argv));
   }
 
   if (eventType === "codex.stderr" || eventType === "codex.error") {
@@ -516,7 +500,7 @@ function renderEvent(event) {
     return activityNode("Done", usageSummary(payload.usage), "activity-muted");
   }
   if (type === "turn.failed") {
-    return messageNode("Run failed", humanMessage(payload.error || payload), "notice");
+    return messageNode("Request failed", humanMessage(payload.error || payload), "notice");
   }
   if (type === "error") {
     return messageNode("Codex", humanMessage(payload), "notice");
@@ -647,6 +631,58 @@ function messageNode(title, text, className) {
 
   article.append(header, body);
   return article;
+}
+
+function userMessageNode(text, runId = "") {
+  const node = messageNode("You", text, "user-message");
+  if (runId) node.dataset.userFor = runId;
+  return node;
+}
+
+function assistantPendingNode(runId, title = "Working", message = "Waiting for a response.") {
+  const node = messageNode(title, message, "assistant-message pending-message");
+  node.dataset.pendingFor = runId;
+  return node;
+}
+
+function appendChatNode(node) {
+  const out = $("runOutput");
+  const empty = out.querySelector(".empty-state");
+  if (empty) out.innerHTML = "";
+  const tray = $("runActivityTray");
+  if (tray) {
+    out.insertBefore(node, tray);
+  } else {
+    out.appendChild(node);
+  }
+  out.scrollTop = out.scrollHeight;
+}
+
+function appendUserMessage(text, runId = "") {
+  if (runId && runId !== "draft" && document.querySelector(`[data-user-for="${runId}"]`)) return;
+  appendChatNode(userMessageNode(text, runId));
+}
+
+function markDraftUserMessage(runId) {
+  const drafts = document.querySelectorAll('[data-user-for="draft"]');
+  const draft = drafts[drafts.length - 1];
+  if (draft) draft.dataset.userFor = runId;
+}
+
+function ensureAssistantPending(runId, title = "Working", message = "Waiting for a response.") {
+  if (!runId) return;
+  const existing = document.querySelector(`[data-pending-for="${runId}"]`);
+  if (existing) {
+    existing.querySelector(".message-title").textContent = title;
+    existing.querySelector(".message-body").innerHTML = renderMarkdown(message);
+    return;
+  }
+  appendChatNode(assistantPendingNode(runId, title, message));
+}
+
+function clearAssistantPending(runId) {
+  if (!runId) return;
+  document.querySelector(`[data-pending-for="${runId}"]`)?.remove();
 }
 
 function activityNode(title, summary, className, details = "") {
@@ -821,6 +857,7 @@ function usageSummary(usage) {
 
 function appendFinalAnswer(run) {
   if (!run.final_message) return;
+  clearAssistantPending(run.id);
   const normalized = normalizeMessage(run.final_message);
   const existing = [...document.querySelectorAll(".assistant-message")].some(
     (node) => node.dataset.messageKey === normalized,
@@ -903,10 +940,10 @@ function setRunState(text) {
   setText("runState", text);
 }
 
-function setRunButtonBusy(busy, label = "Run Codex") {
+function setRunButtonBusy(busy, label = "Send") {
   const button = $("runButton");
   button.disabled = busy;
-  button.textContent = busy ? label : "Run Codex";
+  button.textContent = busy ? label : "Send";
 }
 
 function setEmptyState(title, message) {
@@ -935,8 +972,8 @@ function startRunFeedback(phase, message) {
   state.feedbackTimer = setInterval(() => {
     setRunState(`${state.runPhase} · ${elapsedRunTime()}`);
     const detail = state.activeRunId
-      ? "Still working. Waiting for the next update from the run."
-      : "Still starting. Waiting for Home Assistant and Codex to accept the run.";
+      ? "Still working. Waiting for the next update."
+      : "Still starting. Waiting for Home Assistant and Codex to accept the request.";
     updateWorkingDetail(detail);
   }, 1000);
 }
@@ -950,6 +987,10 @@ function stopRunFeedback() {
 
 function setWorkingState(title, message) {
   setRunState(`${title} · 00:00`);
+  if ($("runOutput").querySelector(".message")) {
+    ensureAssistantPending(state.activeRunId || "starting", title, message);
+    return;
+  }
   $("runOutput").innerHTML = `
     <div class="waiting-state">
       <div class="spinner" aria-hidden="true"></div>
@@ -1007,17 +1048,19 @@ function runStatusText(run) {
 
 function renderRun(run, events, reset = false) {
   if (reset) {
-    $("runOutput").innerHTML = "";
+    renderConversation([run]);
     state.lastEventId = 0;
   }
   setRunState(runStatusText(run));
   if (["queued", "running"].includes(run.status)) {
     state.runPhase = runStatusText(run);
+    ensureAssistantPending(run.id, runStatusText(run), "Waiting for a response.");
     if (!state.feedbackTimer) {
-      startRunFeedback(runStatusText(run), "Waiting for the next update from the run.");
+      startRunFeedback(runStatusText(run), "Waiting for the next update.");
     }
   } else {
     stopRunFeedback();
+    clearAssistantPending(run.id);
   }
   for (const event of events) {
     state.lastEventId = Math.max(state.lastEventId, event.id);
@@ -1027,37 +1070,83 @@ function renderRun(run, events, reset = false) {
   appendDiff(run);
 }
 
-async function loadStatus() {
+async function loadStatus(options = {}) {
   const payload = await api("api/status");
-  await renderStatus(payload);
+  await renderStatus(payload, options);
 }
 
-async function refreshSessionRuns() {
-  if (!state.activeSessionId || state.draftSession) {
-    renderRuns([]);
+async function loadSessionConversation(sessionId) {
+  if (!sessionId || sessionId === DRAFT_SESSION_ID) {
+    activateSession(DRAFT_SESSION_ID);
+    renderConversation([]);
     return;
   }
 
-  const query = `api/runs?session_id=${encodeURIComponent(state.activeSessionId)}`;
+  activateSession(sessionId);
+  renderSessionsList();
+  const query = `api/runs?session_id=${encodeURIComponent(sessionId)}&limit=100&order=asc`;
   const payload = await api(query);
-  renderRuns(payload.runs || []);
+  const runs = payload.runs || [];
+  renderConversation(runs);
+  const active = [...runs].reverse().find((run) => ["queued", "running"].includes(run.status));
+  if (active) {
+    state.activeRunId = active.id;
+    state.lastEventId = 0;
+    await loadRun(active.id);
+    schedulePoll();
+  } else {
+    state.activeRunId = null;
+    stopRunFeedback();
+  }
+}
+
+function renderConversation(runs) {
+  const out = $("runOutput");
+  out.innerHTML = "";
+  state.lastEventId = 0;
+  const latestDiff = [...runs].reverse().find((run) => run.diff)?.diff || "";
+  state.currentDiff = latestDiff;
+  renderDiffButton(latestDiff);
+
+  if (!runs.length) {
+    const title = state.draftSession ? "New session ready" : "Ask for a change, inspection, or plan.";
+    const message = state.draftSession
+      ? "Send a message to start this conversation."
+      : "Codex will receive current Home Assistant context and the selected safety mode.";
+    setEmptyState(title, message);
+    setRunState(state.draftSession ? "New session ready" : "Ready");
+    return;
+  }
+
+  for (const run of runs) {
+    appendUserMessage(run.prompt, run.id);
+    if (run.final_message) {
+      const final = messageNode("Answer", run.final_message, "assistant-message");
+      final.dataset.finalFor = run.id;
+      appendChatNode(final);
+    } else if (run.status === "failed") {
+      appendChatNode(messageNode("Request failed", run.error || "The request failed.", "notice"));
+    } else {
+      ensureAssistantPending(run.id, runStatusText(run), "Waiting for a response.");
+    }
+  }
+
+  const last = runs[runs.length - 1];
+  setRunState(runStatusText(last));
 }
 
 function activateSession(sessionId) {
   if (!sessionId) {
     state.activeSessionId = null;
     state.draftSession = false;
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-    renderRuns([]);
+    removeStoredChoice(SESSION_STORAGE_KEY);
+    renderSessionsList();
     return;
   }
 
   state.activeSessionId = sessionId;
   state.draftSession = sessionId === DRAFT_SESSION_ID;
-  localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
-  if ($("sessionSelect")) {
-    $("sessionSelect").value = sessionId;
-  }
+  storeChoice(SESSION_STORAGE_KEY, sessionId);
 }
 
 async function startNewSession() {
@@ -1066,8 +1155,9 @@ async function startNewSession() {
   button.textContent = "Ready";
   try {
     activateSession(DRAFT_SESSION_ID);
-    renderSessions();
-    renderRuns([]);
+    renderSessionsList();
+    state.activeRunId = null;
+    state.lastEventId = 0;
     setRunState("New session ready");
     setEmptyState("New session ready", "Send a prompt to create this conversation.");
     $("prompt").focus();
@@ -1099,30 +1189,40 @@ function schedulePoll() {
     if (state.activeRunId) {
       const run = await loadRun(state.activeRunId);
       if (!["queued", "running"].includes(run.status)) {
-        await loadStatus();
+        await loadStatus({ loadConversation: false });
       }
     }
   }, 1600);
 }
 
 async function submitRun(approved = false) {
-  const prompt = $("prompt").value.trim();
-  if (!prompt) return;
+  const promptBox = $("prompt");
+  const body = approved && state.pendingApproval
+    ? { ...state.pendingApproval, approved: true }
+    : {
+      prompt: promptBox.value.trim(),
+      mode: state.mode,
+      model: state.selectedModel,
+      approved,
+      yolo: $("yolo").checked,
+      secret_access_approved: $("secretApproved").checked,
+      session_id: state.draftSession ? null : state.activeSessionId,
+      create_new_session: state.draftSession,
+    };
 
-  const body = {
-    prompt,
-    mode: state.mode,
-    model: state.selectedModel,
-    approved,
-    yolo: $("yolo").checked,
-    secret_access_approved: $("secretApproved").checked,
-    session_id: state.draftSession ? null : state.activeSessionId,
-    create_new_session: state.draftSession,
-  };
+  const prompt = body.prompt;
+  if (!prompt) return;
+  const alreadyQueuedForApproval = approved && state.pendingApproval;
+  if (!alreadyQueuedForApproval) {
+    promptBox.value = "";
+    appendUserMessage(prompt, "draft");
+  }
 
   $("approvalBox").hidden = true;
+  state.activeRunId = null;
+  state.lastEventId = 0;
   setRunButtonBusy(true, "Starting...");
-  startRunFeedback("Starting", "Creating the run and opening the session.");
+  startRunFeedback("Starting", "Creating the session and sending your message.");
   await nextPaint();
   try {
     const payload = await api("api/runs", {
@@ -1131,12 +1231,16 @@ async function submitRun(approved = false) {
     });
     state.pendingApproval = null;
     state.lastEventId = 0;
+    state.activeRunId = payload.run_id;
+    clearAssistantPending("starting");
+    clearAssistantPending("approval");
+    markDraftUserMessage(payload.run_id);
     if (payload.session_id) {
       activateSession(payload.session_id);
-      await loadStatus();
+      await loadStatus({ loadConversation: false });
     }
     startRunFeedback("Running", "Waiting for the first response.");
-    await loadRun(payload.run_id, true);
+    await loadRun(payload.run_id);
   } catch (error) {
     if (error.status === 409) {
       state.pendingApproval = body;
@@ -1145,12 +1249,14 @@ async function submitRun(approved = false) {
       $("approvalBox").hidden = false;
       stopRunFeedback();
       setRunState("Approval required");
-      setEmptyState("Approval required", "Review the warning above, then approve the run if it looks right.");
+      clearAssistantPending("starting");
+      ensureAssistantPending("approval", "Approval required", "Review the warning above, then approve if it looks right.");
       return;
     }
     stopRunFeedback();
-    setRunState("Run failed");
-    setEmptyState("Could not start run", error.message);
+    setRunState("Request failed");
+    clearAssistantPending("starting");
+    appendChatNode(messageNode("Request failed", error.message, "notice"));
   } finally {
     setRunButtonBusy(false);
   }
@@ -1259,20 +1365,10 @@ function bind() {
     $("authJson").value = "";
     await loadStatus();
   });
-  $("sessionSelect").addEventListener("change", async (event) => {
-    const sessionId = event.target.value || null;
-    activateSession(sessionId);
-    await refreshSessionRuns();
-    if (state.draftSession) {
-      setEmptyState("New session ready", "Send a prompt to create this conversation.");
-    } else {
-      setEmptyState("Conversation selected", "Select a run from this session or start a new one.");
-    }
-  });
   $("newSession").addEventListener("click", async () => {
     await startNewSession();
   });
-  $("refreshRuns").addEventListener("click", loadStatus);
+  $("refreshSessions").addEventListener("click", () => loadStatus({ loadConversation: false }));
   $("openAllActivity").addEventListener("click", () => setAllActivityOpen(true));
   $("closeAllActivity").addEventListener("click", () => setAllActivityOpen(false));
   $("showDiff").addEventListener("click", showDiffModal);

@@ -65,28 +65,20 @@ __MODEL_OPTIONS__
       <section class="workspace">
         <aside class="panel controls">
           <p class="eyebrow">Mode</p>
-          <div class="segmented" role="radiogroup" aria-label="Run mode">
-            <button class="mode active" data-mode="ask">Ask</button>
-            <button class="mode" data-mode="propose">Propose</button>
-            <button class="mode" data-mode="apply">Apply</button>
-          </div>
-
-          <div class="session-row">
-            <label class="eyebrow" for="sessionSelect">Session</label>
-            <div class="session-controls">
-              <select id="sessionSelect"></select>
-              <button id="newSession" class="secondary" type="button">New session</button>
-            </div>
+          <div class="segmented" role="radiogroup" aria-label="Safety mode">
+            <button class="mode active" data-mode="ask" type="button">Ask</button>
+            <button class="mode" data-mode="propose" type="button">Propose</button>
+            <button class="mode" data-mode="apply" type="button">Apply</button>
           </div>
 
           <label class="check-row">
             <input id="secretApproved" type="checkbox" />
-            <span>Allow secret access for this run</span>
+            <span>Allow secret access for this message</span>
           </label>
 
           <label class="check-row danger">
             <input id="yolo" type="checkbox" />
-            <span>Full-auto for this run</span>
+            <span>Full-auto for this message</span>
           </label>
 
           <div class="meta-grid">
@@ -105,7 +97,7 @@ __MODEL_OPTIONS__
           <div id="approvalBox" class="approval" hidden>
             <strong>Approval required</strong>
             <p id="approvalText"></p>
-            <button id="approveRun" class="danger-button" type="button">Approve and run</button>
+            <button id="approveRun" class="danger-button" type="button">Approve and send</button>
           </div>
 
           <div id="runToolbar" class="run-toolbar" hidden>
@@ -133,17 +125,20 @@ __MODEL_OPTIONS__
               rows="5"
               placeholder="Ask Codex to inspect, propose, or change Home Assistant..."
             ></textarea>
-            <button id="runButton" class="primary" type="submit">Run Codex</button>
+            <button id="runButton" class="primary" type="submit">Send</button>
           </form>
         </section>
       </section>
 
       <section class="panel history">
         <div class="history-header">
-          <p class="eyebrow">Recent runs</p>
-          <button id="refreshRuns" class="secondary" type="button">Refresh</button>
+          <p class="eyebrow">Sessions</p>
+          <div class="history-actions">
+            <button id="newSession" class="secondary" type="button">New session</button>
+            <button id="refreshSessions" class="secondary" type="button">Refresh</button>
+          </div>
         </div>
-        <div id="runsList" class="runs-list"></div>
+        <div id="sessionsList" class="sessions-list"></div>
       </section>
     </main>
 

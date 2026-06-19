@@ -99,6 +99,33 @@ def test_selected_model_is_passed_to_codex_exec() -> None:
     assert command[command.index("--model") + 1] == "gpt-5.4-mini"
 
 
+def test_session_title_summarizes_topic_instead_of_copying_prompt() -> None:
+    prompt = (
+        "I want to have a couple of screenes for the lights in camera oaspeti. "
+        "One sceen should be all the lights on at max brightness with a neutral white."
+    )
+
+    title = make_runner()._session_title(prompt)
+
+    assert title == "Scenes Lights Camera Oaspeti Brightness Neutral"
+    assert title != prompt[: len(title)]
+
+
+def test_session_title_uses_existing_thread_context() -> None:
+    history = [
+        {
+            "prompt": "Create bright and dim scenes for the camera oaspeti lights",
+            "final_message": "Created two scenes.",
+        }
+    ]
+
+    title = make_runner()._session_title("Make the night scene softer", history)
+
+    assert "Scenes" in title
+    assert "Lights" in title
+    assert "Camera" in title
+
+
 def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:
     runner, db = make_startable_runner(tmp_path, monkeypatch)
     user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
@@ -213,6 +240,36 @@ def test_runs_use_existing_session_when_provided(tmp_path, monkeypatch) -> None:
     assert db.get_run(first)["session_id"] == session_id
     assert db.get_run(second)["session_id"] == session_id
     assert len(db.list_runs(user.user_id, session_id=session_id)) == 2
+
+
+def test_list_runs_can_return_session_conversation_order(tmp_path, monkeypatch) -> None:
+    _runner, db = make_startable_runner(tmp_path, monkeypatch)
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    session_id = db.create_session(user.user_id, "Kitchen")
+    for index, prompt in enumerate(["First message", "Second message"], start=1):
+        db.create_run(
+            {
+                "id": f"run-{index}",
+                "user_id": user.user_id,
+                "session_id": session_id,
+                "prompt": prompt,
+                "mode": "ask",
+                "status": "completed",
+                "risk_level": "low",
+                "approval_required": 0,
+                "approved": 0,
+                "yolo": 0,
+                "secret_access_approved": 0,
+                "started_at": f"2026-06-19T12:0{index}:00+00:00",
+            }
+        )
+
+    prompts = [
+        run["prompt"]
+        for run in db.list_runs(user.user_id, session_id=session_id, order="asc")
+    ]
+
+    assert prompts == ["First message", "Second message"]
 
 
 def test_create_new_session_forces_new_thread(tmp_path, monkeypatch) -> None:
