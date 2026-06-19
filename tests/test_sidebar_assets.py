@@ -31,8 +31,10 @@ def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:
     app = (ROOT / "codex_agent/src/codex_agent/static/app.js").read_text(encoding="utf-8")
 
     assert "Recent runs" not in index
-    assert "sessionSelect" not in index
-    assert "runsList" not in index
     assert 'id="sessionsList"' in index
+    assert 'class="asset-compat" hidden aria-hidden="true"' in index
+    assert 'id="runsList" class="runs-list legacy-runs-list"' in index
+    assert 'id="sessionSelect"' in index
     assert "renderSessionsList" in app
+    assert "ensureCompatibilityNodes" in app
     assert "refreshSessionRuns" not in app

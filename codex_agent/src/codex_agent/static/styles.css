@@ -676,7 +676,8 @@ textarea:focus {
   justify-content: end;
 }
 
-.sessions-list {
+.sessions-list,
+.runs-list {
   display: grid;
   gap: 8px;
   width: 100%;
@@ -685,7 +686,8 @@ textarea:focus {
   overflow: hidden;
 }
 
-.session-card {
+.session-card,
+.run-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
@@ -705,7 +707,8 @@ textarea:focus {
 }
 
 .session-card:hover,
-.session-card.active {
+.session-card.active,
+.run-card:hover {
   border-color: rgba(72, 198, 169, 0.62);
 }
 
@@ -713,7 +716,8 @@ textarea:focus {
   background: rgba(72, 198, 169, 0.1);
 }
 
-.session-card-body {
+.session-card-body,
+.run-card-body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -723,16 +727,19 @@ textarea:focus {
   gap: 4px;
 }
 
-.session-card * {
+.session-card *,
+.run-card * {
   min-width: 0;
   max-width: 100%;
 }
 
-.session-card strong {
+.session-card strong,
+.run-card strong {
   display: block;
 }
 
-.session-title {
+.session-title,
+.run-prompt {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -745,13 +752,16 @@ textarea:focus {
   word-break: break-word;
 }
 
-.session-card span {
+.session-card span,
+.run-card span {
   color: var(--muted);
   font-size: 12px;
 }
 
 .session-meta,
-.session-preview {
+.session-preview,
+.run-meta,
+.run-time {
   display: block;
   min-width: 0;
   overflow: hidden;

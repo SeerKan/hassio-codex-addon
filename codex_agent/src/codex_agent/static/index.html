@@ -138,9 +138,16 @@ __MODEL_OPTIONS__
             <button id="refreshSessions" class="secondary" type="button">Refresh</button>
           </div>
         </div>
-        <div id="sessionsList" class="sessions-list"></div>
+        <div id="sessionsList" class="sessions-list">
+          <div id="runsList" class="runs-list legacy-runs-list"></div>
+        </div>
       </section>
     </main>
+
+    <div class="asset-compat" hidden aria-hidden="true">
+      <select id="sessionSelect"></select>
+      <button id="refreshRuns" type="button">Refresh</button>
+    </div>
 
     <div id="diffModal" class="modal-backdrop" hidden>
       <section class="diff-modal" role="dialog" aria-modal="true" aria-labelledby="diffTitle">

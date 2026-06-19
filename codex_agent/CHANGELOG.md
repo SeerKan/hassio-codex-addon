@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.16
+
+- Add compatibility anchors for stale sidebar assets during add-on updates.
+- Guard chat and session rendering against mixed cached HTML and JavaScript.
+- Prevent missing optional controls from surfacing as a failed message send.
+
 ## 0.1.15
 
 - Replace the Recent runs surface with a Sessions list.

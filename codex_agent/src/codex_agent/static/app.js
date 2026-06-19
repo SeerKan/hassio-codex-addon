@@ -1,6 +1,6 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.15";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.16";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const memoryStore = {};
@@ -45,6 +45,27 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+function ensureCompatibilityNodes() {
+  if (!$("sessionsList") && $("runsList")) {
+    const legacyList = $("runsList");
+    legacyList.id = "sessionsList";
+    legacyList.classList.remove("runs-list");
+    legacyList.classList.add("sessions-list");
+  }
+
+  if (!$("refreshSessions") && $("refreshRuns")) {
+    $("refreshRuns").id = "refreshSessions";
+  }
+
+  if (!$("sessionSelect")) {
+    const select = document.createElement("select");
+    select.id = "sessionSelect";
+    select.hidden = true;
+    select.setAttribute("aria-hidden", "true");
+    document.body.appendChild(select);
+  }
+}
 
 function loadStoredChoice(key, fallback) {
   if (memoryStore[key]) return memoryStore[key];
@@ -114,7 +135,8 @@ function apiUrl(path) {
 }
 
 function setText(id, value) {
-  $(id).textContent = value;
+  const node = $(id);
+  if (node) node.textContent = value;
 }
 
 function resolveSessionId(payload) {
@@ -145,7 +167,8 @@ async function renderStatus(payload, { loadConversation = true } = {}) {
   const coreConfig = payload.home_assistant.core_config || {};
   const version = core.version || coreConfig.version || "unknown";
   setText("haVersion", `HA ${version} · Add-on ${payload.app_version || APP_VERSION}`);
-  $("authPanel").hidden = Boolean(payload.auth.configured);
+  const authPanel = $("authPanel");
+  if (authPanel) authPanel.hidden = Boolean(payload.auth.configured);
   renderModelOptions(payload.models || {});
 
   state.sessions = payload.sessions || [];
@@ -162,7 +185,8 @@ async function renderStatus(payload, { loadConversation = true } = {}) {
 }
 
 function renderSessionsList() {
-  const list = $("sessionsList");
+  const list = $("sessionsList") || $("runsList");
+  if (!list) return;
   list.innerHTML = "";
   if (!state.sessions.length) {
     list.innerHTML = '<p class="muted">No sessions yet.</p>';
@@ -400,6 +424,7 @@ function itemFromPayload(type, payload) {
 
 function appendEvent(event) {
   const out = $("runOutput");
+  if (!out) return;
   const empty = out.querySelector(".empty-state");
   const waiting = out.querySelector(".waiting-state");
   if (empty || waiting) out.innerHTML = "";
@@ -415,16 +440,19 @@ function appendRenderedNode(node) {
     appendActivityNode(node);
     return;
   }
+  const out = $("runOutput");
+  if (!out) return;
   const tray = $("runActivityTray");
   if (tray) {
-    $("runOutput").insertBefore(node, tray);
+    out.insertBefore(node, tray);
     return;
   }
-  $("runOutput").appendChild(node);
+  out.appendChild(node);
 }
 
 function appendActivityNode(node) {
   const tray = ensureActivityTray();
+  if (!tray) return;
   tray.querySelector(".activity-list").appendChild(node);
   updateActivityCount();
 }
@@ -432,6 +460,8 @@ function appendActivityNode(node) {
 function ensureActivityTray() {
   let tray = $("runActivityTray");
   if (tray) return tray;
+  const out = $("runOutput");
+  if (!out) return null;
 
   tray = document.createElement("details");
   tray.id = "runActivityTray";
@@ -443,7 +473,7 @@ function ensureActivityTray() {
     </summary>
     <div class="activity-list"></div>
   `;
-  $("runOutput").appendChild(tray);
+  out.appendChild(tray);
   return tray;
 }
 
@@ -647,6 +677,7 @@ function assistantPendingNode(runId, title = "Working", message = "Waiting for a
 
 function appendChatNode(node) {
   const out = $("runOutput");
+  if (!out) return;
   const empty = out.querySelector(".empty-state");
   if (empty) out.innerHTML = "";
   const tray = $("runActivityTray");
@@ -673,8 +704,10 @@ function ensureAssistantPending(runId, title = "Working", message = "Waiting for
   if (!runId) return;
   const existing = document.querySelector(`[data-pending-for="${runId}"]`);
   if (existing) {
-    existing.querySelector(".message-title").textContent = title;
-    existing.querySelector(".message-body").innerHTML = renderMarkdown(message);
+    const titleNode = existing.querySelector(".message-title");
+    const bodyNode = existing.querySelector(".message-body");
+    if (titleNode) titleNode.textContent = title;
+    if (bodyNode) bodyNode.innerHTML = renderMarkdown(message);
     return;
   }
   appendChatNode(assistantPendingNode(runId, title, message));
@@ -864,8 +897,10 @@ function appendFinalAnswer(run) {
   );
   if (existing || document.querySelector(`[data-final-for="${run.id}"]`)) return;
 
-  const waiting = $("runOutput").querySelector(".waiting-state");
-  if (waiting) $("runOutput").innerHTML = "";
+  const out = $("runOutput");
+  if (!out) return;
+  const waiting = out.querySelector(".waiting-state");
+  if (waiting) out.innerHTML = "";
 
   const final = messageNode("Answer", run.final_message, "assistant-message");
   final.dataset.finalFor = run.id;
@@ -909,13 +944,17 @@ function diffCounts(diff) {
 
 function showDiffModal() {
   if (!state.currentDiff) return;
-  $("diffBody").innerHTML = renderDiff(state.currentDiff);
-  $("diffModal").hidden = false;
-  $("closeDiff").focus();
+  const body = $("diffBody");
+  const modal = $("diffModal");
+  if (!body || !modal) return;
+  body.innerHTML = renderDiff(state.currentDiff);
+  modal.hidden = false;
+  $("closeDiff")?.focus();
 }
 
 function hideDiffModal() {
-  $("diffModal").hidden = true;
+  const modal = $("diffModal");
+  if (modal) modal.hidden = true;
 }
 
 function renderDiff(diff) {
@@ -942,12 +981,15 @@ function setRunState(text) {
 
 function setRunButtonBusy(busy, label = "Send") {
   const button = $("runButton");
+  if (!button) return;
   button.disabled = busy;
   button.textContent = busy ? label : "Send";
 }
 
 function setEmptyState(title, message) {
-  $("runOutput").innerHTML = `
+  const out = $("runOutput");
+  if (!out) return;
+  out.innerHTML = `
     <div class="empty-state">
       <h2>${escapeHtml(title)}</h2>
       <p>${escapeHtml(message)}</p>
@@ -987,11 +1029,13 @@ function stopRunFeedback() {
 
 function setWorkingState(title, message) {
   setRunState(`${title} · 00:00`);
-  if ($("runOutput").querySelector(".message")) {
+  const out = $("runOutput");
+  if (!out) return;
+  if (out.querySelector(".message")) {
     ensureAssistantPending(state.activeRunId || "starting", title, message);
     return;
   }
-  $("runOutput").innerHTML = `
+  out.innerHTML = `
     <div class="waiting-state">
       <div class="spinner" aria-hidden="true"></div>
       <div>
@@ -1102,6 +1146,7 @@ async function loadSessionConversation(sessionId) {
 
 function renderConversation(runs) {
   const out = $("runOutput");
+  if (!out) return;
   out.innerHTML = "";
   state.lastEventId = 0;
   const latestDiff = [...runs].reverse().find((run) => run.diff)?.diff || "";
@@ -1151,8 +1196,10 @@ function activateSession(sessionId) {
 
 async function startNewSession() {
   const button = $("newSession");
-  button.disabled = true;
-  button.textContent = "Ready";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Ready";
+  }
   try {
     activateSession(DRAFT_SESSION_ID);
     renderSessionsList();
@@ -1160,13 +1207,15 @@ async function startNewSession() {
     state.lastEventId = 0;
     setRunState("New session ready");
     setEmptyState("New session ready", "Send a prompt to create this conversation.");
-    $("prompt").focus();
+    $("prompt")?.focus();
   } catch (error) {
     setRunState("Session failed");
     setEmptyState("Could not create session", error.message);
   } finally {
-    button.disabled = false;
-    button.textContent = "New session";
+    if (button) {
+      button.disabled = false;
+      button.textContent = "New session";
+    }
   }
 }
 
@@ -1197,6 +1246,7 @@ function schedulePoll() {
 
 async function submitRun(approved = false) {
   const promptBox = $("prompt");
+  if (!promptBox) return;
   const body = approved && state.pendingApproval
     ? { ...state.pendingApproval, approved: true }
     : {
@@ -1204,8 +1254,8 @@ async function submitRun(approved = false) {
       mode: state.mode,
       model: state.selectedModel,
       approved,
-      yolo: $("yolo").checked,
-      secret_access_approved: $("secretApproved").checked,
+      yolo: Boolean($("yolo")?.checked),
+      secret_access_approved: Boolean($("secretApproved")?.checked),
       session_id: state.draftSession ? null : state.activeSessionId,
       create_new_session: state.draftSession,
     };
@@ -1218,7 +1268,8 @@ async function submitRun(approved = false) {
     appendUserMessage(prompt, "draft");
   }
 
-  $("approvalBox").hidden = true;
+  const approvalBox = $("approvalBox");
+  if (approvalBox) approvalBox.hidden = true;
   state.activeRunId = null;
   state.lastEventId = 0;
   setRunButtonBusy(true, "Starting...");
@@ -1245,8 +1296,8 @@ async function submitRun(approved = false) {
     if (error.status === 409) {
       state.pendingApproval = body;
       const assessment = error.payload.detail.assessment;
-      $("approvalText").textContent = `${assessment.warning} ${assessment.reasons.join(" ")}`;
-      $("approvalBox").hidden = false;
+      setText("approvalText", `${assessment.warning} ${assessment.reasons.join(" ")}`);
+      if (approvalBox) approvalBox.hidden = false;
       stopRunFeedback();
       setRunState("Approval required");
       clearAssistantPending("starting");
@@ -1264,7 +1315,8 @@ async function submitRun(approved = false) {
 
 async function startLogin() {
   const payload = await api("api/auth/start", { method: "POST" });
-  $("loginOutput").hidden = false;
+  const output = $("loginOutput");
+  if (output) output.hidden = false;
   renderLoginJob({ status: "running", output: "Waiting for Codex login output..." });
   pollLogin(payload.job_id);
 }
@@ -1281,6 +1333,7 @@ async function pollLogin(jobId) {
 
 function renderLoginJob(job) {
   const panel = $("loginOutput");
+  if (!panel) return;
   panel.hidden = false;
   panel.innerHTML = "";
 
@@ -1335,53 +1388,55 @@ async function copyText(value) {
 }
 
 function bind() {
+  ensureCompatibilityNodes();
   setMode(state.mode);
   for (const button of document.querySelectorAll(".mode")) {
     button.addEventListener("click", () => {
       setMode(button.dataset.mode);
     });
   }
-  $("modelSelect").addEventListener("change", (event) => {
+  $("modelSelect")?.addEventListener("change", (event) => {
     state.selectedModel = event.target.value;
     storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
     const selected = state.modelOptions.find((model) => model.id === state.selectedModel);
     event.target.title = selected?.description || "";
   });
 
-  $("composer").addEventListener("submit", (event) => {
+  $("composer")?.addEventListener("submit", (event) => {
     event.preventDefault();
     submitRun(false);
   });
-  $("approveRun").addEventListener("click", () => submitRun(true));
-  $("startLogin").addEventListener("click", startLogin);
-  $("showImport").addEventListener("click", () => {
-    $("importBox").hidden = !$("importBox").hidden;
+  $("approveRun")?.addEventListener("click", () => submitRun(true));
+  $("startLogin")?.addEventListener("click", startLogin);
+  $("showImport")?.addEventListener("click", () => {
+    const importBox = $("importBox");
+    if (importBox) importBox.hidden = !importBox.hidden;
   });
-  $("importAuth").addEventListener("click", async () => {
+  $("importAuth")?.addEventListener("click", async () => {
     await api("api/auth/import", {
       method: "POST",
-      body: JSON.stringify({ auth_json: $("authJson").value }),
+      body: JSON.stringify({ auth_json: $("authJson")?.value || "" }),
     });
-    $("authJson").value = "";
+    if ($("authJson")) $("authJson").value = "";
     await loadStatus();
   });
-  $("newSession").addEventListener("click", async () => {
+  $("newSession")?.addEventListener("click", async () => {
     await startNewSession();
   });
-  $("refreshSessions").addEventListener("click", () => loadStatus({ loadConversation: false }));
-  $("openAllActivity").addEventListener("click", () => setAllActivityOpen(true));
-  $("closeAllActivity").addEventListener("click", () => setAllActivityOpen(false));
-  $("showDiff").addEventListener("click", showDiffModal);
-  $("closeDiff").addEventListener("click", hideDiffModal);
-  $("diffModal").addEventListener("click", (event) => {
+  $("refreshSessions")?.addEventListener("click", () => loadStatus({ loadConversation: false }));
+  $("openAllActivity")?.addEventListener("click", () => setAllActivityOpen(true));
+  $("closeAllActivity")?.addEventListener("click", () => setAllActivityOpen(false));
+  $("showDiff")?.addEventListener("click", showDiffModal);
+  $("closeDiff")?.addEventListener("click", hideDiffModal);
+  $("diffModal")?.addEventListener("click", (event) => {
     if (event.target.id === "diffModal") hideDiffModal();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("diffModal").hidden) hideDiffModal();
+    if (event.key === "Escape" && !$("diffModal")?.hidden) hideDiffModal();
   });
 }
 
 bind();
 loadStatus().catch((error) => {
-  $("runOutput").innerHTML = `<div class="empty-state"><h2>Unable to load</h2><p>${escapeHtml(error.message)}</p></div>`;
+  setEmptyState("Unable to load", error.message);
 });
