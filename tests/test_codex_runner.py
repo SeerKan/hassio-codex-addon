@@ -1,4 +1,5 @@
 import asyncio
+import tomllib
 from pathlib import Path
 
 from codex_agent import codex_runner
@@ -99,6 +100,31 @@ def test_selected_model_is_passed_to_codex_exec() -> None:
     assert command[command.index("--model") + 1] == "gpt-5.4-mini"
 
 
+def test_managed_config_registers_home_assistant_mcp_without_token() -> None:
+    config = tomllib.loads(MANAGED_CODEX_CONFIG)
+    server = config["mcp_servers"]["home-assistant"]
+
+    assert server["command"] == "/usr/local/bin/ha-mcp-stdio"
+    assert "SUPERVISOR_TOKEN" in server["env_vars"]
+    assert server["env"]["HOMEASSISTANT_URL"] == "http://supervisor/core"
+    assert server["env"]["ENABLE_TOOL_SEARCH"] == "true"
+    assert server["env"]["ENABLE_AUTO_BACKUP"] == "false"
+    assert "HOMEASSISTANT_TOKEN" not in MANAGED_CODEX_CONFIG
+    assert "dev-supervisor-token" not in MANAGED_CODEX_CONFIG
+
+
+def test_run_environment_passes_mode_to_mcp_wrapper(monkeypatch, tmp_path) -> None:
+    runner = make_runner()
+    monkeypatch.setattr(codex_runner, "WORKSPACE", tmp_path / "homeassistant")
+    monkeypatch.setattr(codex_runner, "supervisor_token", lambda: "supervisor-token")
+
+    env = runner._env(tmp_path / "codex-home", mode="apply")
+
+    assert env["CODEX_AGENT_MODE"] == "apply"
+    assert env["SUPERVISOR_TOKEN"] == "supervisor-token"
+    assert env["CODEX_AGENT_HOME_ASSISTANT_ROOT"] == str(tmp_path / "homeassistant")
+
+
 def test_session_title_summarizes_topic_instead_of_copying_prompt() -> None:
     prompt = (
         "I want to have a couple of screenes for the lights in camera oaspeti. "
@@ -162,6 +188,27 @@ def test_prompt_includes_markitdown_attachment_context() -> None:
     assert "### Attachment 1: inventory.xlsx" in prompt
     assert "| light.kitchen | Kitchen |" in prompt
     assert "User request:\nUse the attached inventory." in prompt
+
+
+def test_prompt_prefers_home_assistant_mcp_tools() -> None:
+    runner = make_runner()
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    assessment = RiskAssessment(level="low", approval_required=False)
+
+    prompt = runner._build_prompt(
+        user=user,
+        prompt="How many lights are in the dashboard?",
+        mode="ask",
+        session_id="session-1",
+        session_history=[],
+        assessment=assessment,
+        ha_context={"core": {"version": "test"}},
+        secret_access_approved=False,
+    )
+
+    assert "MCP server named `home-assistant`" in prompt
+    assert "read-only in ask/propose mode" in prompt
+    assert "writable only in apply mode" in prompt
 
 
 def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:

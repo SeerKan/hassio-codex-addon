@@ -79,3 +79,17 @@ def test_markitdown_is_shipped_without_alpine_onnxruntime_dependency() -> None:
     assert "markitdown[" not in requirements
     assert "onnxruntime" not in requirements
     assert 'label="unknown"' in shim
+
+
+def test_home_assistant_mcp_is_shipped_inside_addon() -> None:
+    dockerfile = (ROOT / "codex_agent/Dockerfile").read_text(encoding="utf-8")
+    wrapper = (ROOT / "codex_agent/ha-mcp-stdio.sh").read_text(encoding="utf-8")
+
+    assert "ARG HA_MCP_VERSION=7.8.1" in dockerfile
+    assert "env -u UV_EXTRA_INDEX_URL -u PIP_EXTRA_INDEX_URL" in dockerfile
+    assert "uv tool install --python 3.13 \"ha-mcp==${HA_MCP_VERSION}\"" in dockerfile
+    assert "COPY ha-mcp-stdio.sh /usr/local/bin/ha-mcp-stdio" in dockerfile
+    assert 'HOMEASSISTANT_URL="${HOMEASSISTANT_URL:-http://supervisor/core}"' in wrapper
+    assert 'HOMEASSISTANT_TOKEN="${SUPERVISOR_TOKEN}"' in wrapper
+    assert 'READ_ONLY_MODE="${READ_ONLY_MODE:-true}"' in wrapper
+    assert 'READ_ONLY_MODE="${READ_ONLY_MODE:-false}"' in wrapper

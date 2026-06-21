@@ -4,6 +4,8 @@ ARG BUILD_VERSION
 ARG BUILD_ARCH
 ARG CODEX_CLI_VERSION=0.139.0
 ARG MARKITDOWN_VERSION=0.1.6
+ARG UV_VERSION=0.11.23
+ARG HA_MCP_VERSION=7.8.1
 
 LABEL \
   io.hass.version="${BUILD_VERSION}" \
@@ -40,10 +42,22 @@ RUN \
   /opt/codex-agent/bin/pip install --no-cache-dir -r /tmp/codex-agent-requirements.txt \
   && /opt/codex-agent/bin/pip install --no-cache-dir --no-deps "markitdown==${MARKITDOWN_VERSION}"
 
+RUN \
+  python3 -m venv /tmp/uv-bootstrap \
+  && /tmp/uv-bootstrap/bin/pip install --no-cache-dir "uv==${UV_VERSION}" \
+  && UV_PYTHON_INSTALL_DIR=/opt/ha-mcp/python \
+    UV_TOOL_DIR=/opt/ha-mcp/tools \
+    UV_TOOL_BIN_DIR=/opt/ha-mcp/bin \
+    UV_LINK_MODE=copy \
+    env -u UV_EXTRA_INDEX_URL -u PIP_EXTRA_INDEX_URL \
+    /tmp/uv-bootstrap/bin/uv tool install --python 3.13 "ha-mcp==${HA_MCP_VERSION}" \
+  && rm -rf /tmp/uv-bootstrap /root/.cache/uv
+
 COPY run.sh /run.sh
+COPY ha-mcp-stdio.sh /usr/local/bin/ha-mcp-stdio
 COPY src /app/src
 
-RUN chmod a+x /run.sh
+RUN chmod a+x /run.sh /usr/local/bin/ha-mcp-stdio
 
 ENV PYTHONPATH=/app/src \
     CODEX_AGENT_DATA=/data \

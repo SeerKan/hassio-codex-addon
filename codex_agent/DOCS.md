@@ -34,6 +34,9 @@ The add-on uses:
 - `homeassistant_api: true` for the Core REST and WebSocket API proxy.
 - `hassio_api: true` with `hassio_role: admin` for Supervisor APIs.
 - Mapped Home Assistant folders so Codex can inspect and change configuration.
+- A built-in `home-assistant` MCP server powered by `homeassistant-ai/ha-mcp`.
+  It is started by Codex over stdio, uses the add-on Supervisor token at
+  runtime, and is read-only for Ask/Propose mode. Apply mode enables write tools.
 
 The add-on does not publish a host port. The web UI is intended to be reached
 through Home Assistant ingress only.

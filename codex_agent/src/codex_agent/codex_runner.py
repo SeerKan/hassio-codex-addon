@@ -33,7 +33,38 @@ LOCAL_CONTEXT_FILES = (
     Path("/homeassistant/.storage/lovelace_dashboards"),
     Path("/homeassistant/ui-lovelace.yaml"),
 )
-MANAGED_CODEX_CONFIG = 'cli_auth_credentials_store = "file"\n'
+MANAGED_CODEX_CONFIG = """cli_auth_credentials_store = "file"
+
+[mcp_servers.home-assistant]
+command = "/usr/local/bin/ha-mcp-stdio"
+args = []
+env_vars = ["SUPERVISOR_TOKEN", "CODEX_AGENT_MODE"]
+startup_timeout_sec = 30
+tool_timeout_sec = 180
+
+[mcp_servers.home-assistant.env]
+HOMEASSISTANT_URL = "http://supervisor/core"
+ENABLE_TOOL_SEARCH = "true"
+TOOL_SEARCH_MAX_RESULTS = "8"
+ENABLE_TOOL_SECURITY_POLICIES = "false"
+ENABLE_MANDATORY_BPS = "true"
+ENABLE_BETA_FEATURES = "true"
+ENABLE_YAML_CONFIG_EDITING = "true"
+ENABLE_YAML_PACKAGES_AUTOMATION = "true"
+ENABLE_YAML_PACKAGES_SCRIPT = "true"
+ENABLE_YAML_PACKAGES_SCENE = "true"
+HAMCP_ENABLE_FILESYSTEM_TOOLS = "true"
+HAMCP_ENABLE_CUSTOM_COMPONENT_INTEGRATION = "true"
+HAMCP_ENABLE_DASHBOARD_SCREENSHOT = "false"
+ENABLE_CODE_MODE = "false"
+ENABLE_LITE_DOCSTRINGS = "true"
+ENABLE_AUTO_BACKUP = "false"
+BACKUP_HINT = "weak"
+HA_VERIFY_SSL = "true"
+FASTMCP_SHOW_SERVER_BANNER = "false"
+MCP_SERVER_NAME = "home-assistant"
+ENVIRONMENT = "production"
+"""
 FIRST_CONFIG_BACKUP_STATE = "first_configuration_change_backup"
 LEGACY_FIRST_BACKUP_STATE = "first_change_backup"
 ANSI_ESCAPE_RE = re.compile(
@@ -387,7 +418,7 @@ class CodexRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                env=self._env(home),
+                env=self._env(home, mode=mode),
             )
             assert proc.stdout is not None
             assert proc.stderr is not None
@@ -525,6 +556,15 @@ Mapped paths:
 Operational rules:
 - Do not read or modify secrets, private keys, auth caches, tokens, or credentials unless
   secret access approved is true and the user's request specifically requires it.
+- A Home Assistant MCP server named `home-assistant` is available inside this
+  add-on. Prefer its tools for Home Assistant entity lookup, service calls,
+  automations, scripts, scenes, dashboards, registries, backups, logs, repairs,
+  and supported configuration workflows. Use direct shell or REST calls only
+  when the MCP server does not cover the task or you need to inspect local files
+  that were mapped into this container.
+- The Home Assistant MCP server is read-only in ask/propose mode and writable only in apply mode.
+  If an MCP write tool is unavailable in ask/propose mode,
+  explain what would be changed instead of attempting a side effect another way.
 - Prefer Home Assistant Core API through http://supervisor/core/api and Supervisor API
   through http://supervisor when APIs are safer than direct file edits. Use the
   SUPERVISOR_TOKEN environment variable as the bearer token.
@@ -702,12 +742,14 @@ User request:
         truncated = value[: max_length - 1].rstrip()
         return f"{truncated}…"
 
-    def _env(self, home: Path) -> dict[str, str]:
+    def _env(self, home: Path, *, mode: str | None = None) -> dict[str, str]:
         env = os.environ.copy()
         env["CODEX_HOME"] = str(home)
         env["HOME"] = str(home)
         env.setdefault("NO_COLOR", "1")
         env["CODEX_AGENT_HOME_ASSISTANT_ROOT"] = str(WORKSPACE)
+        if mode:
+            env["CODEX_AGENT_MODE"] = mode
         token = supervisor_token()
         if token:
             env["SUPERVISOR_TOKEN"] = token

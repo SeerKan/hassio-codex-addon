@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.20
+
+- Ship Home Assistant MCP inside the add-on with an isolated Python 3.13 runtime.
+- Register a managed `home-assistant` MCP server for every user without storing Supervisor tokens in config.
+- Keep HA-MCP read-only in ask/propose mode and writable only in apply mode.
+
 ## 0.1.19
 
 - Add chat file attachments that are converted to Markdown inside the add-on with MarkItDown.

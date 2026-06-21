@@ -12,6 +12,8 @@ and APIs.
 - Admin-only panel visibility
 - Per-user Codex authentication and state under `/data`
 - Ask, propose, and apply modes
+- Built-in Home Assistant MCP tooling for richer entity, dashboard, automation,
+  script, scene, registry, log, and Supervisor workflows
 - Low-risk automation with high-risk approval gates
 - Optional full-auto mode with an explicit warning
 - Full Supervisor backup before the first apply-mode change
