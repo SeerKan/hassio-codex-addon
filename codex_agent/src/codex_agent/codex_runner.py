@@ -129,6 +129,8 @@ class CodexRunner:
     SESSION_CONTEXT_LIMIT = 8
     SESSION_TITLE_MAX = 64
     SESSION_CONTEXT_MAX_CHARS = 2800
+    ATTACHMENT_CONTEXT_MAX_CHARS = 120_000
+    ATTACHMENT_FILE_MAX_CHARS = 60_000
 
     def __init__(self, db: Database, settings: Settings) -> None:
         self.db = db
@@ -232,6 +234,7 @@ class CodexRunner:
         approved: bool,
         yolo: bool,
         secret_access_approved: bool,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> str:
         if shutil.which("codex") is None:
             raise RuntimeError("codex CLI is not installed in this image.")
@@ -312,6 +315,7 @@ class CodexRunner:
                 ha_context,
                 yolo,
                 secret_access_approved,
+                attachments or [],
             ),
             name=f"codex-run-{run_id}",
             daemon=True,
@@ -351,6 +355,7 @@ class CodexRunner:
         ha_context: dict[str, Any],
         yolo: bool,
         secret_access_approved: bool,
+        attachments: list[dict[str, Any]],
     ) -> None:
         self.db.update_run(run_id, status="running")
         before = None
@@ -368,6 +373,7 @@ class CodexRunner:
             assessment=assessment,
             ha_context=ha_context,
             secret_access_approved=secret_access_approved,
+            attachments=attachments,
         )
         command.append(full_prompt)
         self.db.add_event(run_id, "codex.command", {"argv": self._redacted_command(command)})
@@ -473,6 +479,7 @@ class CodexRunner:
         assessment: RiskAssessment,
         ha_context: dict[str, Any],
         secret_access_approved: bool,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> str:
         mode_instruction = {
             "ask": "Answer only. Do not modify files or call side-effect APIs.",
@@ -481,6 +488,14 @@ class CodexRunner:
         }[mode]
 
         session_context = self._render_session_context(session_history)
+        attachment_context = self._render_attachment_context(attachments or [])
+        attachment_section = ""
+        if attachment_context:
+            attachment_section = f"""
+
+User-provided attachments for this request, converted to Markdown by MarkItDown:
+{attachment_context}
+"""
         return f"""
 You are Codex running inside the Home Assistant Codex Agent add-on.
 
@@ -532,6 +547,8 @@ Current session: {session_id}
 
 Recent session context:
 {session_context}
+
+{attachment_section}
 
 Unless explicitly asked otherwise, continue from the thread above.
 - Codex's internal Linux sandbox is disabled in this add-on because Home
@@ -628,6 +645,51 @@ User request:
             lines.append(f"Assistant: {self._truncate_for_prompt(assistant_reply, 520)}")
             lines.append("")
         return self._truncate_for_prompt("\n".join(lines).strip(), self.SESSION_CONTEXT_MAX_CHARS)
+
+    def _render_attachment_context(self, attachments: list[dict[str, Any]]) -> str:
+        if not attachments:
+            return ""
+
+        rendered: list[str] = []
+        used = 0
+        for index, attachment in enumerate(attachments, start=1):
+            remaining = self.ATTACHMENT_CONTEXT_MAX_CHARS - used
+            if remaining <= 0:
+                rendered.append(
+                    "\n[Additional attachments were omitted because the attachment context "
+                    "limit was reached.]"
+                )
+                break
+
+            filename = self._clean_for_prompt(attachment.get("filename", "attachment"))
+            content_type = self._clean_for_prompt(attachment.get("content_type", "unknown"))
+            size_bytes = attachment.get("size_bytes", 0)
+            raw_markdown = clean_terminal_text(str(attachment.get("markdown", ""))).strip()
+            safe_markdown = raw_markdown.replace("```", "` ` `")
+            markdown_limit = min(self.ATTACHMENT_FILE_MAX_CHARS, max(0, remaining - 360))
+            if markdown_limit <= 0:
+                rendered.append(
+                    "\n[Attachment omitted because the attachment context limit was reached.]"
+                )
+                break
+            if len(safe_markdown) > markdown_limit:
+                safe_markdown = (
+                    safe_markdown[: markdown_limit - 96].rstrip()
+                    + "\n\n[Attachment truncated before sending to Codex.]"
+                )
+
+            block = (
+                f"### Attachment {index}: {filename}\n"
+                f"- content type: {content_type}\n"
+                f"- original size: {size_bytes} bytes\n\n"
+                "```markdown\n"
+                f"{safe_markdown}\n"
+                "```"
+            )
+            rendered.append(block)
+            used += len(block)
+
+        return "\n\n".join(rendered)
 
     def _clean_for_prompt(self, value: Any) -> str:
         if not isinstance(value, str):

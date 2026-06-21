@@ -126,6 +126,44 @@ def test_session_title_uses_existing_thread_context() -> None:
     assert "Camera" in title
 
 
+def test_prompt_includes_markitdown_attachment_context() -> None:
+    runner = make_runner()
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    assessment = RiskAssessment(level="low", approval_required=False)
+
+    prompt = runner._build_prompt(
+        user=user,
+        prompt="Use the attached inventory.",
+        mode="ask",
+        session_id="session-1",
+        session_history=[],
+        assessment=assessment,
+        ha_context={"core": {"version": "test"}},
+        secret_access_approved=False,
+        attachments=[
+            {
+                "filename": "inventory.xlsx",
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "size_bytes": 1234,
+                "markdown": (
+                    "# Inventory\n\n"
+                    "| Entity | Room |\n"
+                    "| --- | --- |\n"
+                    "| light.kitchen | Kitchen |"
+                ),
+            }
+        ],
+    )
+
+    assert (
+        "User-provided attachments for this request, converted to Markdown by MarkItDown"
+        in prompt
+    )
+    assert "### Attachment 1: inventory.xlsx" in prompt
+    assert "| light.kitchen | Kitchen |" in prompt
+    assert "User request:\nUse the attached inventory." in prompt
+
+
 def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:
     runner, db = make_startable_runner(tmp_path, monkeypatch)
     user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")

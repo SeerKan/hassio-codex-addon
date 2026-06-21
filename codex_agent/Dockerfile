@@ -3,6 +3,7 @@ FROM ghcr.io/home-assistant/base:3.22
 ARG BUILD_VERSION
 ARG BUILD_ARCH
 ARG CODEX_CLI_VERSION=0.139.0
+ARG MARKITDOWN_VERSION=0.1.6
 
 LABEL \
   io.hass.version="${BUILD_VERSION}" \
@@ -19,6 +20,7 @@ RUN \
     ca-certificates \
     curl \
     diffutils \
+    ffmpeg \
     git \
     jq \
     nodejs \
@@ -34,7 +36,9 @@ RUN \
   && /opt/codex-agent/bin/pip install --no-cache-dir --upgrade pip
 
 COPY requirements.txt /tmp/codex-agent-requirements.txt
-RUN /opt/codex-agent/bin/pip install --no-cache-dir -r /tmp/codex-agent-requirements.txt
+RUN \
+  /opt/codex-agent/bin/pip install --no-cache-dir -r /tmp/codex-agent-requirements.txt \
+  && /opt/codex-agent/bin/pip install --no-cache-dir --no-deps "markitdown==${MARKITDOWN_VERSION}"
 
 COPY run.sh /run.sh
 COPY src /app/src

@@ -122,12 +122,19 @@ __MODEL_OPTIONS__
           </div>
 
           <form id="composer" class="composer">
-            <textarea
-              id="prompt"
-              rows="5"
-              placeholder="Ask Codex to inspect, propose, or change Home Assistant..."
-            ></textarea>
-            <button id="runButton" class="primary" type="submit">Send</button>
+            <div class="composer-main">
+              <div id="attachmentTray" class="attachment-tray" hidden></div>
+              <textarea
+                id="prompt"
+                rows="5"
+                placeholder="Ask Codex to inspect, propose, or change Home Assistant..."
+              ></textarea>
+            </div>
+            <div class="composer-actions">
+              <button id="attachButton" class="secondary" type="button">Attach</button>
+              <button id="runButton" class="primary" type="submit">Send</button>
+            </div>
+            <input id="fileInput" type="file" multiple hidden />
           </form>
         </section>
       </section>

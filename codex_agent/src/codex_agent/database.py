@@ -78,6 +78,16 @@ class Database:
                     payload TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS attachments (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    content_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    markdown TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS auth_jobs (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -110,6 +120,10 @@ class Database:
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_runs_session_started_at ON "
                 "runs(session_id, started_at DESC)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_attachments_user_created_at ON "
+                "attachments(user_id, created_at DESC)"
             )
 
     def upsert_user(self, user_id: str, username: str, display_name: str, safe_id: str) -> None:
@@ -316,6 +330,42 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def create_attachment(self, record: dict[str, Any]) -> None:
+        columns = ", ".join(record)
+        placeholders = ", ".join("?" for _ in record)
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"INSERT INTO attachments ({columns}) VALUES ({placeholders})",
+                tuple(record.values()),
+            )
+
+    def get_attachments(self, user_id: str, attachment_ids: list[str]) -> list[dict[str, Any]]:
+        unique_ids = list(dict.fromkeys(attachment_ids))
+        if not unique_ids:
+            return []
+
+        placeholders = ", ".join("?" for _ in unique_ids)
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT *
+                FROM attachments
+                WHERE user_id = ? AND id IN ({placeholders})
+                """,
+                tuple([user_id, *unique_ids]),
+            ).fetchall()
+
+        by_id = {row["id"]: dict(row) for row in rows}
+        return [by_id[attachment_id] for attachment_id in unique_ids if attachment_id in by_id]
+
+    def delete_attachment(self, user_id: str, attachment_id: str) -> int:
+        with self._lock, self._conn:
+            cur = self._conn.execute(
+                "DELETE FROM attachments WHERE user_id = ? AND id = ?",
+                (user_id, attachment_id),
+            )
+        return cur.rowcount
+
     def create_auth_job(self, job_id: str, user_id: str) -> None:
         with self._lock, self._conn:
             self._conn.execute(
@@ -387,6 +437,8 @@ class Database:
             deleted["runs"] = cur.rowcount
             cur = self._conn.execute("DELETE FROM auth_jobs WHERE started_at < ?", (cutoff_s,))
             deleted["auth_jobs"] = cur.rowcount
+            cur = self._conn.execute("DELETE FROM attachments WHERE created_at < ?", (cutoff_s,))
+            deleted["attachments"] = cur.rowcount
             cur = self._conn.execute(
                 """
                 DELETE FROM sessions

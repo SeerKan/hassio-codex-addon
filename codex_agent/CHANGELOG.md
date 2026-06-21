@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.19
+
+- Add chat file attachments that are converted to Markdown inside the add-on with MarkItDown.
+- Send converted attachment context with the next session message without bloating stored prompts.
+- Show upload, conversion, and removal state in the sidebar composer.
+
 ## 0.1.18
 
 - Make Enter submit the chat composer and Ctrl/Command+Enter keep textarea newlines.

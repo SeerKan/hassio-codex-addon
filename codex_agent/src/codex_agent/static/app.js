@@ -1,8 +1,9 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.18";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.19";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
+const MAX_ATTACHMENT_LABEL = 42;
 const memoryStore = {};
 const FALLBACK_MODEL_OPTIONS = [
   {
@@ -42,6 +43,9 @@ const state = {
   runPhase: "",
   sessions: [],
   currentDiff: "",
+  attachments: [],
+  uploadCounter: 0,
+  uploadingAttachments: 0,
   modeUserChanged: false,
   modelUserChanged: false,
 };
@@ -134,6 +138,22 @@ function apiUrl(path) {
   const cleanPath = String(path).replace(/^\/+/, "");
   const base = document.baseURI || (window.location.href.endsWith("/") ? window.location.href : `${window.location.href}/`);
   return new URL(cleanPath, base).toString();
+}
+
+async function uploadApi(path, formData) {
+  const response = await fetch(apiUrl(path), {
+    method: "POST",
+    body: formData,
+  });
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  if (!response.ok) {
+    const error = new Error(typeof payload === "string" ? payload : payload.detail || "Upload failed");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
 }
 
 function setText(id, value) {
@@ -855,6 +875,122 @@ function conciseText(value, maxLength = 220) {
   return `${text.slice(0, maxLength - 1)}…`;
 }
 
+function attachmentLabel(filename) {
+  const clean = cleanTerminalText(filename || "attachment").replace(/\s+/g, " ").trim();
+  if (clean.length <= MAX_ATTACHMENT_LABEL) return clean;
+  const extension = clean.includes(".") ? clean.slice(clean.lastIndexOf(".")) : "";
+  const keep = Math.max(12, MAX_ATTACHMENT_LABEL - extension.length - 1);
+  return `${clean.slice(0, keep).trim()}…${extension}`;
+}
+
+function attachmentDescription(attachment) {
+  if (attachment.status === "uploading") return "Converting with MarkItDown";
+  if (attachment.status === "error") return attachment.error || "Upload failed";
+  const chars = Number(attachment.markdown_chars || 0);
+  const size = Number(attachment.size_bytes || 0);
+  const parts = [];
+  if (chars) parts.push(`${chars.toLocaleString()} chars`);
+  if (size) parts.push(`${Math.ceil(size / 1024).toLocaleString()} KB`);
+  return parts.join(" · ") || "Ready";
+}
+
+function renderAttachments() {
+  const tray = $("attachmentTray");
+  if (!tray) return;
+  tray.innerHTML = "";
+  tray.hidden = state.attachments.length === 0;
+  for (const attachment of state.attachments) {
+    const chip = document.createElement("span");
+    chip.className = `attachment-chip attachment-${attachment.status || "ready"}`;
+    chip.title = `${attachment.filename}\n${attachmentDescription(attachment)}`;
+
+    const label = document.createElement("span");
+    label.className = "attachment-name";
+    label.textContent = attachmentLabel(attachment.filename);
+
+    const meta = document.createElement("span");
+    meta.className = "attachment-meta";
+    meta.textContent = attachmentDescription(attachment);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attachment-remove";
+    remove.setAttribute("aria-label", `Remove ${attachment.filename}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => removeAttachment(attachment.clientId));
+
+    chip.append(label, meta, remove);
+    tray.appendChild(chip);
+  }
+}
+
+async function uploadFiles(files) {
+  const fileList = Array.from(files || []);
+  if (!fileList.length) return;
+
+  for (const file of fileList) {
+    const pending = {
+      clientId: `upload-${++state.uploadCounter}`,
+      filename: file.name || "attachment",
+      status: "uploading",
+      markdown_chars: 0,
+      size_bytes: file.size || 0,
+    };
+    state.attachments.push(pending);
+    state.uploadingAttachments += 1;
+    renderAttachments();
+
+    const formData = new FormData();
+    formData.append("file", file);
+    uploadApi("api/attachments", formData)
+      .then((payload) => {
+        Object.assign(pending, payload.attachment || {}, { status: "ready" });
+      })
+      .catch((error) => {
+        pending.status = "error";
+        pending.error = error.message || "Upload failed";
+      })
+      .finally(() => {
+        state.uploadingAttachments = Math.max(0, state.uploadingAttachments - 1);
+        renderAttachments();
+      });
+  }
+}
+
+function readyAttachments() {
+  return state.attachments.filter((attachment) => attachment.status === "ready" && attachment.id);
+}
+
+function clearAttachments() {
+  state.attachments = [];
+  state.uploadingAttachments = 0;
+  renderAttachments();
+}
+
+function restoreAttachments(attachments) {
+  state.attachments = attachments.map((attachment) => ({ ...attachment }));
+  state.uploadingAttachments = 0;
+  renderAttachments();
+}
+
+async function removeAttachment(clientId) {
+  const index = state.attachments.findIndex((attachment) => attachment.clientId === clientId);
+  if (index < 0) return;
+  const [attachment] = state.attachments.splice(index, 1);
+  renderAttachments();
+  if (attachment?.id) {
+    fetch(apiUrl(`api/attachments/${encodeURIComponent(attachment.id)}`), { method: "DELETE" }).catch(() => {
+      // The attachment will still expire with retention cleanup.
+    });
+  }
+}
+
+function userMessageText(prompt, attachments = []) {
+  if (!attachments.length) return prompt;
+  const filenames = attachments.map((attachment) => attachment.filename).join(", ");
+  return `${prompt}\n\nAttached files: ${filenames}`;
+}
+
 function humanizeDisplayText(value) {
   const text = cleanTerminalText(value).trim();
   if (!looksLikeJson(text)) return text;
@@ -1268,6 +1404,19 @@ function schedulePoll() {
 async function submitRun(approved = false) {
   const promptBox = $("prompt");
   if (!promptBox) return;
+  if (!approved && state.uploadingAttachments > 0) {
+    setRunState("Attachments uploading");
+    appendChatNode(messageNode("Attachments", "Wait for file conversion to finish, then send again.", "notice"));
+    return;
+  }
+  if (!approved && state.attachments.some((attachment) => attachment.status === "error")) {
+    setRunState("Attachment failed");
+    appendChatNode(messageNode("Attachments", "Remove failed attachments or upload them again before sending.", "notice"));
+    return;
+  }
+  const attachmentsForRun = approved && state.pendingApproval
+    ? []
+    : readyAttachments();
   const body = approved && state.pendingApproval
     ? { ...state.pendingApproval, approved: true }
     : {
@@ -1279,6 +1428,7 @@ async function submitRun(approved = false) {
       secret_access_approved: Boolean($("secretApproved")?.checked),
       session_id: state.draftSession ? null : state.activeSessionId,
       create_new_session: state.draftSession,
+      attachment_ids: attachmentsForRun.map((attachment) => attachment.id),
     };
 
   const prompt = body.prompt;
@@ -1286,7 +1436,8 @@ async function submitRun(approved = false) {
   const alreadyQueuedForApproval = approved && state.pendingApproval;
   if (!alreadyQueuedForApproval) {
     promptBox.value = "";
-    appendUserMessage(prompt, "draft");
+    appendUserMessage(userMessageText(prompt, attachmentsForRun), "draft");
+    clearAttachments();
   }
 
   const approvalBox = $("approvalBox");
@@ -1329,6 +1480,9 @@ async function submitRun(approved = false) {
     setRunState("Request failed");
     clearAssistantPending("starting");
     appendChatNode(messageNode("Request failed", error.message, "notice"));
+    if (!alreadyQueuedForApproval) {
+      restoreAttachments(attachmentsForRun);
+    }
   } finally {
     setRunButtonBusy(false);
   }
@@ -1453,6 +1607,11 @@ function bind() {
   });
 
   $("prompt")?.addEventListener("keydown", handlePromptKeydown);
+  $("attachButton")?.addEventListener("click", () => $("fileInput")?.click());
+  $("fileInput")?.addEventListener("change", (event) => {
+    uploadFiles(event.target.files);
+    event.target.value = "";
+  });
   $("composer")?.addEventListener("submit", (event) => {
     event.preventDefault();
     submitRun(false);

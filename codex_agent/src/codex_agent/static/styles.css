@@ -633,10 +633,96 @@ h2 {
 .composer {
   display: grid;
   grid-template-columns: 1fr auto;
+  align-items: end;
   gap: 10px;
   padding: 14px;
   border-top: 1px solid var(--line);
   background: #111719;
+}
+
+.composer-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 96px;
+}
+
+.composer-actions button {
+  width: 100%;
+}
+
+.attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.attachment-chip {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(72px, auto) 22px;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 420px);
+  min-height: 34px;
+  border: 1px solid rgba(72, 198, 169, 0.36);
+  border-radius: 6px;
+  background: rgba(72, 198, 169, 0.09);
+  color: var(--text);
+  padding: 5px 5px 5px 9px;
+}
+
+.attachment-chip * {
+  min-width: 0;
+}
+
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.attachment-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.attachment-uploading {
+  border-color: rgba(245, 193, 92, 0.44);
+  background: rgba(245, 193, 92, 0.08);
+}
+
+.attachment-error {
+  border-color: rgba(255, 107, 95, 0.52);
+  background: rgba(255, 107, 95, 0.1);
+}
+
+.attachment-error .attachment-meta {
+  color: #ffaaa3;
+}
+
+.attachment-remove {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(13, 17, 19, 0.85);
+  color: var(--muted);
+  line-height: 1;
+}
+
+.attachment-remove:hover {
+  color: var(--text);
+  border: 1px solid var(--line);
 }
 
 textarea {
@@ -950,6 +1036,11 @@ textarea:focus {
   .composer,
   .import-box {
     grid-template-columns: 1fr;
+  }
+
+  .composer-actions {
+    grid-template-columns: 1fr 1fr;
+    min-width: 0;
   }
 
   .run-toolbar {
