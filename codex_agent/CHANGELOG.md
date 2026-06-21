@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.18
+
+- Make Enter submit the chat composer and Ctrl/Command+Enter keep textarea newlines.
+- Persist the selected mode and model per Home Assistant user through the add-on API.
+
 ## 0.1.17
 
 - Inline sidebar JavaScript and CSS into the HTML response to avoid mixed cached assets.

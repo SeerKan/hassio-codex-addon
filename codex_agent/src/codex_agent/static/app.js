@@ -1,6 +1,6 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.17";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.18";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const memoryStore = {};
@@ -42,6 +42,8 @@ const state = {
   runPhase: "",
   sessions: [],
   currentDiff: "",
+  modeUserChanged: false,
+  modelUserChanged: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -139,6 +141,19 @@ function setText(id, value) {
   if (node) node.textContent = value;
 }
 
+function isValidMode(mode) {
+  return ["ask", "propose", "apply"].includes(mode);
+}
+
+function savePreferences(preferences) {
+  api("api/preferences", {
+    method: "POST",
+    body: JSON.stringify(preferences),
+  }).catch(() => {
+    // Local storage keeps the UI stable if the sidebar is briefly offline.
+  });
+}
+
 function resolveSessionId(payload) {
   const persisted = loadStoredChoice(SESSION_STORAGE_KEY, "");
   if (persisted === DRAFT_SESSION_ID) {
@@ -169,6 +184,16 @@ async function renderStatus(payload, { loadConversation = true } = {}) {
   setText("haVersion", `HA ${version} · Add-on ${payload.app_version || APP_VERSION}`);
   const authPanel = $("authPanel");
   if (authPanel) authPanel.hidden = Boolean(payload.auth.configured);
+  const preferences = payload.preferences || {};
+  if (!state.modeUserChanged && preferences.persisted && isValidMode(preferences.mode)) {
+    setMode(preferences.mode);
+  } else {
+    setMode(state.mode);
+  }
+  if (!state.modelUserChanged && preferences.persisted && preferences.model) {
+    state.selectedModel = preferences.model;
+    storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
+  }
   renderModelOptions(payload.models || {});
 
   state.sessions = payload.sessions || [];
@@ -1067,12 +1092,14 @@ function setAllActivityOpen(open) {
   }
 }
 
-function setMode(mode) {
-  state.mode = ["ask", "propose", "apply"].includes(mode) ? mode : "ask";
+function setMode(mode, { persist = false, userChanged = false } = {}) {
+  state.mode = isValidMode(mode) ? mode : "ask";
+  if (userChanged) state.modeUserChanged = true;
   storeChoice(MODE_STORAGE_KEY, state.mode);
   for (const item of document.querySelectorAll(".mode")) {
     item.classList.toggle("active", item.dataset.mode === state.mode);
   }
+  if (persist) savePreferences({ mode: state.mode });
 }
 
 function runStatusText(run) {
@@ -1307,6 +1334,33 @@ async function submitRun(approved = false) {
   }
 }
 
+function handlePromptKeydown(event) {
+  if (event.key !== "Enter" || event.isComposing) return;
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    insertTextareaNewline(event.currentTarget);
+    return;
+  }
+  event.preventDefault();
+  const form = $("composer");
+  if (form?.requestSubmit) {
+    form.requestSubmit();
+  } else {
+    submitRun(false);
+  }
+}
+
+function insertTextareaNewline(textarea) {
+  if (!textarea || typeof textarea.value !== "string") return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? start;
+  textarea.value = `${textarea.value.slice(0, start)}\n${textarea.value.slice(end)}`;
+  const nextPosition = start + 1;
+  textarea.selectionStart = nextPosition;
+  textarea.selectionEnd = nextPosition;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 async function startLogin() {
   const payload = await api("api/auth/start", { method: "POST" });
   const output = $("loginOutput");
@@ -1386,16 +1440,19 @@ function bind() {
   setMode(state.mode);
   for (const button of document.querySelectorAll(".mode")) {
     button.addEventListener("click", () => {
-      setMode(button.dataset.mode);
+      setMode(button.dataset.mode, { persist: true, userChanged: true });
     });
   }
   $("modelSelect")?.addEventListener("change", (event) => {
     state.selectedModel = event.target.value;
+    state.modelUserChanged = true;
     storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
+    savePreferences({ model: state.selectedModel });
     const selected = state.modelOptions.find((model) => model.id === state.selectedModel);
     event.target.title = selected?.description || "";
   });
 
+  $("prompt")?.addEventListener("keydown", handlePromptKeydown);
   $("composer")?.addEventListener("submit", (event) => {
     event.preventDefault();
     submitRun(false);

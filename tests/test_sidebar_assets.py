@@ -39,3 +39,17 @@ def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:
     assert "renderSessionsList" in app
     assert "ensureCompatibilityNodes" in app
     assert "refreshSessionRuns" not in app
+
+
+def test_sidebar_keyboard_and_preferences_wiring() -> None:
+    app = (ROOT / "codex_agent/src/codex_agent/static/app.js").read_text(encoding="utf-8")
+
+    assert "function handlePromptKeydown" in app
+    assert "function insertTextareaNewline" in app
+    assert 'event.key !== "Enter"' in app
+    assert "event.ctrlKey || event.metaKey" in app
+    assert "insertTextareaNewline(event.currentTarget)" in app
+    assert "form.requestSubmit()" in app
+    assert '"api/preferences"' in app
+    assert "preferences.persisted" in app
+    assert "{ persist: true, userChanged: true }" in app

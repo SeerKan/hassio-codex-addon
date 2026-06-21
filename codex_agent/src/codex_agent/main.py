@@ -26,6 +26,7 @@ CACHE_VERSION_COOKIE = "codex_agent_asset_version"
 settings = load_settings()
 db = Database()
 runner = CodexRunner(db, settings)
+MODE_VALUES = {"ask", "propose", "apply"}
 
 
 @asynccontextmanager
@@ -91,6 +92,11 @@ class ImportAuthRequest(BaseModel):
     auth_json: str = Field(min_length=2, max_length=200_000)
 
 
+class PreferencesRequest(BaseModel):
+    mode: Literal["ask", "propose", "apply"] | None = None
+    model: str | None = Field(default=None, max_length=80)
+
+
 class SessionCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=128)
 
@@ -128,6 +134,46 @@ def _model_options_html() -> str:
     )
 
 
+def _preferences_key(user: UserContext) -> str:
+    return f"user_preferences:{user.user_id}"
+
+
+def _user_preferences(user: UserContext) -> dict[str, str | bool]:
+    raw = db.get_state(_preferences_key(user)) or {}
+    mode = raw.get("mode") if raw.get("mode") in MODE_VALUES else ""
+    model = normalize_model(raw.get("model")) or ""
+    if model not in CODEX_MODEL_IDS:
+        model = ""
+    return {
+        "mode": mode,
+        "model": model,
+        "persisted": bool(raw),
+    }
+
+
+def _save_user_preferences(
+    user: UserContext,
+    *,
+    mode: str | None = None,
+    model: str | None = None,
+) -> dict[str, str | bool]:
+    preferences = _user_preferences(user)
+    if mode is not None:
+        if mode not in MODE_VALUES:
+            raise HTTPException(status_code=400, detail=f"Unsupported mode: {mode}")
+        preferences["mode"] = mode
+    if model is not None:
+        normalized_model = normalize_model(model) or ""
+        if normalized_model and normalized_model not in CODEX_MODEL_IDS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported Codex model: {normalized_model}",
+            )
+        preferences["model"] = normalized_model
+    db.set_state(_preferences_key(user), preferences)
+    return _user_preferences(user)
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -153,12 +199,19 @@ async def status(user: UserDep) -> dict:
             "default": _default_model(),
             "options": CODEX_MODEL_OPTIONS[:10],
         },
+        "preferences": _user_preferences(user),
         "home_assistant": ha_context,
         "active_session_id": active_session_id,
         "runs_session_id": active_session_id,
         "sessions": sessions,
         "runs": recent_runs,
     }
+
+
+@app.post("/api/preferences")
+async def save_preferences(payload: PreferencesRequest, user: UserDep) -> dict:
+    preferences = _save_user_preferences(user, mode=payload.mode, model=payload.model)
+    return {"preferences": preferences}
 
 
 @app.post("/api/auth/start")
@@ -196,6 +249,7 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
     selected_model = normalize_model(payload.model) or _default_model()
     if selected_model not in CODEX_MODEL_IDS:
         raise HTTPException(status_code=400, detail=f"Unsupported Codex model: {selected_model}")
+    _save_user_preferences(user, mode=payload.mode, model=selected_model)
 
     auth = runner.auth_status(user)
     if not auth.get("configured"):
