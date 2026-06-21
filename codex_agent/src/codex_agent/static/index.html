@@ -16,16 +16,18 @@
           .replaceAll("&", "&amp;")
           .replaceAll('"', "&quot;")
           .replaceAll("<", "&lt;");
-        document.write(`<base href="${safePath}"><link rel="stylesheet" href="static/styles.css?v=${version}">`);
+        document.write(`<base href="${safePath}">`);
         try {
           const key = "codex_agent_asset_version";
-          const previous = window.localStorage.getItem(key);
           window.localStorage.setItem(key, version);
         } catch (_error) {
-          // Versioned asset URLs and no-store headers do the cache-busting work.
+          // No-store headers and inlined assets do the cache-busting work.
         }
       })();
     </script>
+    <style>
+__APP_STYLES__
+    </style>
   </head>
   <body>
     <main class="shell">
@@ -138,13 +140,12 @@ __MODEL_OPTIONS__
             <button id="refreshSessions" class="secondary" type="button">Refresh</button>
           </div>
         </div>
-        <div id="sessionsList" class="sessions-list">
-          <div id="runsList" class="runs-list legacy-runs-list"></div>
-        </div>
+        <div id="sessionsList" class="sessions-list"></div>
       </section>
     </main>
 
     <div class="asset-compat" hidden aria-hidden="true">
+      <div id="runsList" class="runs-list legacy-runs-list"></div>
       <select id="sessionSelect"></select>
       <button id="refreshRuns" type="button">Refresh</button>
     </div>
@@ -162,8 +163,8 @@ __MODEL_OPTIONS__
       </section>
     </div>
 
-    <script>
-      document.write(`<script src="static/app.js?v=${window.CODEX_AGENT_VERSION}" type="module"><\/script>`);
+    <script type="module">
+__APP_SCRIPT__
     </script>
   </body>
 </html>

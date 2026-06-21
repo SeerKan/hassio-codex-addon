@@ -107,7 +107,11 @@ UserDep = Annotated[UserContext, Depends(current_user)]
 @app.get("/")
 async def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     html = html.replace("__APP_VERSION__", __version__)
+    html = html.replace("__APP_STYLES__", styles.replace("</style", "<\\/style"))
+    html = html.replace("__APP_SCRIPT__", script.replace("</script", "<\\/script"))
     html = html.replace("__MODEL_OPTIONS__", _model_options_html())
     return HTMLResponse(html)
 

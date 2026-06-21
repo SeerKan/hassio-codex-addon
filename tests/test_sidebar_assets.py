@@ -16,11 +16,11 @@ def test_sidebar_has_ingress_base_and_model_fallbacks() -> None:
     index = (ROOT / "codex_agent/src/codex_agent/static/index.html").read_text(encoding="utf-8")
     app = (ROOT / "codex_agent/src/codex_agent/static/app.js").read_text(encoding="utf-8")
 
-    assert (
-        '<base href="${safePath}"><link rel="stylesheet" href="static/styles.css?v=${version}">'
-        in index
-    )
-    assert 'src="static/app.js?v=${window.CODEX_AGENT_VERSION}"' in index
+    assert '<base href="${safePath}">' in index
+    assert "__APP_STYLES__" in index
+    assert "__APP_SCRIPT__" in index
+    assert "static/app.js?v=" not in index
+    assert "static/styles.css?v=" not in index
     assert "__MODEL_OPTIONS__" in index
     assert "FALLBACK_MODEL_OPTIONS" in app
     assert "document.baseURI" in app
@@ -34,6 +34,7 @@ def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:
     assert 'id="sessionsList"' in index
     assert 'class="asset-compat" hidden aria-hidden="true"' in index
     assert 'id="runsList" class="runs-list legacy-runs-list"' in index
+    assert index.index('id="sessionsList"') < index.index('class="asset-compat"')
     assert 'id="sessionSelect"' in index
     assert "renderSessionsList" in app
     assert "ensureCompatibilityNodes" in app

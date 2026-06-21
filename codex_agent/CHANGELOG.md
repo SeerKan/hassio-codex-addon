@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.17
+
+- Inline sidebar JavaScript and CSS into the HTML response to avoid mixed cached assets.
+- Keep stale run-list compatibility nodes hidden outside the visible Sessions panel.
+- Add a Docker-based local Home Assistant/add-on harness for regression testing.
+
 ## 0.1.16
 
 - Add compatibility anchors for stale sidebar assets during add-on updates.

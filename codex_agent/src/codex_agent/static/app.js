@@ -1,6 +1,6 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.16";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.17";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const memoryStore = {};
@@ -197,7 +197,7 @@ function renderSessionsList() {
     card.className = "session-card";
     card.classList.toggle("active", session.id === state.activeSessionId && !state.draftSession);
     card.type = "button";
-    card.title = session.last_prompt || session.title;
+    card.title = session.title || "Session";
     const body = document.createElement("span");
     body.className = "session-card-body";
     const title = document.createElement("strong");
@@ -210,12 +210,6 @@ function renderSessionsList() {
     const status = session.last_status ? ` · ${session.last_status}` : "";
     meta.textContent = `${count} ${count === 1 ? "message" : "messages"}${status} · ${updated}`;
     body.append(title, meta);
-    if (session.last_prompt) {
-      const preview = document.createElement("span");
-      preview.className = "session-preview";
-      preview.textContent = conciseText(session.last_prompt, 140);
-      body.appendChild(preview);
-    }
     card.appendChild(body);
     card.addEventListener("click", () => loadSessionConversation(session.id));
     list.appendChild(card);

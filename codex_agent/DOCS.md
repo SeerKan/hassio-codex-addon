@@ -86,6 +86,26 @@ If you publish under a different GitHub owner or repository, update:
 - `.github/workflows/release.yaml`
 - README installation links
 
+## Local Docker Test Rig
+
+Use the repository-level Docker harness when changing the sidebar, Supervisor
+API access, or mounted Home Assistant filesystem behavior:
+
+```bash
+python3 scripts/dev_hass_env.py up --skip-ha
+python3 scripts/dev_hass_env.py test
+python3 scripts/dev_hass_env.py down
+```
+
+The harness builds the add-on image locally, starts a fake Supervisor available
+as `http://supervisor` inside the add-on network, mounts a sample Home Assistant
+configuration directory at `/homeassistant`, and exposes the add-on on
+`http://127.0.0.1:8099/`.
+
+Omit `--skip-ha` when you also want a Home Assistant Core container on
+`http://127.0.0.1:8123/`. The fake Supervisor remains the add-on's Supervisor
+API target so tests can run without a full HA OS installation.
+
 ## Current v1 Boundaries
 
 - HA OS is the target install type.

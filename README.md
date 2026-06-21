@@ -42,3 +42,6 @@ material.
 
 See [`codex_agent/DOCS.md`](codex_agent/DOCS.md) for configuration, operation,
 risk classification, and publishing notes.
+
+For local regression testing, see the Docker test rig section in
+[`codex_agent/DOCS.md`](codex_agent/DOCS.md#local-docker-test-rig).

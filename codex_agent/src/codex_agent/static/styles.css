@@ -759,7 +759,6 @@ textarea:focus {
 }
 
 .session-meta,
-.session-preview,
 .run-meta,
 .run-time {
   display: block;
@@ -768,13 +767,6 @@ textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow-wrap: anywhere;
-}
-
-.session-preview {
-  white-space: normal;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
 }
 
 .login-output {
