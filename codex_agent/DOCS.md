@@ -37,6 +37,10 @@ The add-on uses:
 - A built-in `home-assistant` MCP server powered by `homeassistant-ai/ha-mcp`.
   It is started by Codex over stdio, uses the add-on Supervisor token at
   runtime, and is read-only for Ask/Propose mode. Apply mode enables write tools.
+- A bundled `home-assistant-best-practices` Agent Skill from
+  `homeassistant-ai/skills`. The add-on links it into each user's Codex home on
+  startup so Home Assistant-specific best practices stay available across
+  sessions.
 
 The add-on does not publish a host port. The web UI is intended to be reached
 through Home Assistant ingress only.
@@ -116,3 +120,9 @@ API target so tests can run without a full HA OS installation.
 - Secret-file access requires explicit approval.
 - The add-on relies on the Codex CLI contract and may need updates when Codex
   CLI authentication output changes.
+
+## Thanks
+
+Thanks to `homeassistant-ai/ha-mcp` for the Home Assistant MCP tooling and to
+`homeassistant-ai/skills` for the Home Assistant best-practices skill bundled in
+this add-on.

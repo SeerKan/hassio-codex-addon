@@ -19,6 +19,8 @@ from .snapshot import collect_snapshot, diff_snapshots
 
 USERS_DIR = DATA_DIR / "users"
 WORKSPACE = Path("/homeassistant")
+BUNDLED_SKILLS_DIR = Path("/opt/codex-agent-skills")
+BUNDLED_SKILL_NAMES = ("home-assistant-best-practices",)
 MAPPED_PATHS = (
     Path("/homeassistant"),
     Path("/config"),
@@ -178,7 +180,32 @@ class CodexRunner:
         if not config.exists() or config.read_text(encoding="utf-8") != MANAGED_CODEX_CONFIG:
             config.write_text(MANAGED_CODEX_CONFIG, encoding="utf-8")
             config.chmod(0o600)
+        self._ensure_bundled_skills(home)
         return home
+
+    def _ensure_bundled_skills(self, home: Path) -> None:
+        skills_dir = home / "skills"
+        for skill_name in BUNDLED_SKILL_NAMES:
+            source = BUNDLED_SKILLS_DIR / skill_name
+            if not (source / "SKILL.md").exists():
+                continue
+
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            target = skills_dir / skill_name
+            if target.is_symlink():
+                try:
+                    if target.resolve(strict=False) == source:
+                        continue
+                except OSError:
+                    pass
+                target.unlink()
+            elif target.exists():
+                continue
+
+            try:
+                target.symlink_to(source, target_is_directory=True)
+            except OSError:
+                shutil.copytree(source, target, dirs_exist_ok=True)
 
     def auth_status(self, user: UserContext) -> dict[str, Any]:
         home = self.ensure_user_home(user)
@@ -565,6 +592,12 @@ Operational rules:
 - The Home Assistant MCP server is read-only in ask/propose mode and writable only in apply mode.
   If an MCP write tool is unavailable in ask/propose mode,
   explain what would be changed instead of attempting a side effect another way.
+- A bundled Home Assistant best-practices skill is available at
+  /opt/codex-agent-skills/home-assistant-best-practices and is linked into
+  CODEX_HOME/skills for this user when possible. Use it when creating or
+  editing automations, scripts, scenes, dashboards, helpers, templates, device
+  controls, YAML-only integrations, or AppDaemon apps. Read its SKILL.md and
+  relevant reference files before making those changes.
 - Prefer Home Assistant Core API through http://supervisor/core/api and Supervisor API
   through http://supervisor when APIs are safer than direct file edits. Use the
   SUPERVISOR_TOKEN environment variable as the bearer token.

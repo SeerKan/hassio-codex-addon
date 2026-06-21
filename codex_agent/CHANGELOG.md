@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.21
+
+- Bundle the Home Assistant best-practices Agent Skill inside the add-on image.
+- Link the bundled skill into each user's Codex home so existing users get it after upgrade.
+- Prompt Codex to consult the skill for automations, dashboards, helpers, templates, YAML-only integrations, device control, scenes, and AppDaemon work.
+
 ## 0.1.20
 
 - Ship Home Assistant MCP inside the add-on with an isolated Python 3.13 runtime.

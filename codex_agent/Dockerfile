@@ -55,6 +55,7 @@ RUN \
 
 COPY run.sh /run.sh
 COPY ha-mcp-stdio.sh /usr/local/bin/ha-mcp-stdio
+COPY skills /opt/codex-agent-skills
 COPY src /app/src
 
 RUN chmod a+x /run.sh /usr/local/bin/ha-mcp-stdio

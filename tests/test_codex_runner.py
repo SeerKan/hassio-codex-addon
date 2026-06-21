@@ -125,6 +125,42 @@ def test_run_environment_passes_mode_to_mcp_wrapper(monkeypatch, tmp_path) -> No
     assert env["CODEX_AGENT_HOME_ASSISTANT_ROOT"] == str(tmp_path / "homeassistant")
 
 
+def test_ensure_user_home_links_bundled_home_assistant_skill(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(codex_runner, "USERS_DIR", tmp_path / "users")
+    bundled = tmp_path / "bundled"
+    skill_source = bundled / "home-assistant-best-practices"
+    skill_source.mkdir(parents=True)
+    (skill_source / "SKILL.md").write_text("---\nname: test\n---\n", encoding="utf-8")
+    monkeypatch.setattr(codex_runner, "BUNDLED_SKILLS_DIR", bundled)
+    runner = make_runner()
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+
+    home = runner.ensure_user_home(user)
+    linked = home / "skills" / "home-assistant-best-practices"
+
+    assert linked.is_symlink()
+    assert linked.resolve() == skill_source
+
+
+def test_ensure_user_home_preserves_user_owned_skill_directory(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(codex_runner, "USERS_DIR", tmp_path / "users")
+    bundled = tmp_path / "bundled"
+    skill_source = bundled / "home-assistant-best-practices"
+    skill_source.mkdir(parents=True)
+    (skill_source / "SKILL.md").write_text("bundled", encoding="utf-8")
+    monkeypatch.setattr(codex_runner, "BUNDLED_SKILLS_DIR", bundled)
+    runner = make_runner()
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    custom = runner.codex_home_for(user) / "skills" / "home-assistant-best-practices"
+    custom.mkdir(parents=True)
+    (custom / "SKILL.md").write_text("custom", encoding="utf-8")
+
+    runner.ensure_user_home(user)
+
+    assert not custom.is_symlink()
+    assert (custom / "SKILL.md").read_text(encoding="utf-8") == "custom"
+
+
 def test_session_title_summarizes_topic_instead_of_copying_prompt() -> None:
     prompt = (
         "I want to have a couple of screenes for the lights in camera oaspeti. "
@@ -209,6 +245,7 @@ def test_prompt_prefers_home_assistant_mcp_tools() -> None:
     assert "MCP server named `home-assistant`" in prompt
     assert "read-only in ask/propose mode" in prompt
     assert "writable only in apply mode" in prompt
+    assert "/opt/codex-agent-skills/home-assistant-best-practices" in prompt
 
 
 def test_runtime_apply_does_not_create_first_backup(tmp_path, monkeypatch) -> None:

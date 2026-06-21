@@ -93,3 +93,17 @@ def test_home_assistant_mcp_is_shipped_inside_addon() -> None:
     assert 'HOMEASSISTANT_TOKEN="${SUPERVISOR_TOKEN}"' in wrapper
     assert 'READ_ONLY_MODE="${READ_ONLY_MODE:-true}"' in wrapper
     assert 'READ_ONLY_MODE="${READ_ONLY_MODE:-false}"' in wrapper
+
+
+def test_home_assistant_best_practices_skill_is_shipped_inside_addon() -> None:
+    dockerfile = (ROOT / "codex_agent/Dockerfile").read_text(encoding="utf-8")
+    skill = ROOT / "codex_agent/skills/home-assistant-best-practices/SKILL.md"
+    source = ROOT / "codex_agent/skills/home-assistant-best-practices/SOURCE.md"
+
+    assert "COPY skills /opt/codex-agent-skills" in dockerfile
+    assert skill.exists()
+    assert "name: home-assistant-best-practices" in skill.read_text(encoding="utf-8")
+    assert "references/automation-patterns.md" in skill.read_text(encoding="utf-8")
+    assert "4eca7861ef265e673b537f3cb9f5eeb873c953d3" in source.read_text(
+        encoding="utf-8"
+    )

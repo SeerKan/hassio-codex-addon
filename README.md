@@ -14,6 +14,8 @@ and APIs.
 - Ask, propose, and apply modes
 - Built-in Home Assistant MCP tooling for richer entity, dashboard, automation,
   script, scene, registry, log, and Supervisor workflows
+- Bundled Home Assistant best-practices skill for safer automation, helper,
+  dashboard, scene, YAML, and device-control changes
 - Low-risk automation with high-risk approval gates
 - Optional full-auto mode with an explicit warning
 - Full Supervisor backup before the first apply-mode change
@@ -47,3 +49,10 @@ risk classification, and publishing notes.
 
 For local regression testing, see the Docker test rig section in
 [`codex_agent/DOCS.md`](codex_agent/DOCS.md#local-docker-test-rig).
+
+## Thanks
+
+Thanks to [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp)
+for the Home Assistant MCP tooling used by this add-on, and to
+[`homeassistant-ai/skills`](https://github.com/homeassistant-ai/skills) for the
+Home Assistant best-practices skill.
