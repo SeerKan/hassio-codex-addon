@@ -1,6 +1,6 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.22";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.23";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const MAX_ATTACHMENT_LABEL = 42;
@@ -898,12 +898,21 @@ function attachmentLabel(filename) {
   return `${clean.slice(0, keep).trim()}…${extension}`;
 }
 
+function isImageFile(file) {
+  const type = cleanTerminalText(file?.type || "").toLowerCase();
+  const name = cleanTerminalText(file?.name || "").toLowerCase();
+  return type.startsWith("image/") || /\.(gif|heic|heif|jpe?g|png|svg|webp)$/.test(name);
+}
+
 function attachmentDescription(attachment) {
-  if (attachment.status === "uploading") return "Converting with MarkItDown";
+  if (attachment.status === "uploading") {
+    return attachment.kind === "image" ? "Uploading image" : "Converting with MarkItDown";
+  }
   if (attachment.status === "error") return attachment.error || "Upload failed";
   const chars = Number(attachment.markdown_chars || 0);
   const size = Number(attachment.size_bytes || 0);
   const parts = [];
+  if (attachment.kind === "image") parts.push("Image");
   if (chars) parts.push(`${chars.toLocaleString()} chars`);
   if (size) parts.push(`${Math.ceil(size / 1024).toLocaleString()} KB`);
   return parts.join(" · ") || "Ready";
@@ -948,6 +957,7 @@ async function uploadFiles(files) {
       clientId: `upload-${++state.uploadCounter}`,
       filename: file.name || "attachment",
       status: "uploading",
+      kind: isImageFile(file) ? "image" : "markdown",
       markdown_chars: 0,
       size_bytes: file.size || 0,
     };
@@ -1421,7 +1431,7 @@ async function submitRun(approved = false) {
   if (!promptBox) return;
   if (!approved && state.uploadingAttachments > 0) {
     setRunState("Attachments uploading");
-    appendChatNode(messageNode("Attachments", "Wait for file conversion to finish, then send again.", "notice"));
+    appendChatNode(messageNode("Attachments", "Wait for file upload or conversion to finish, then send again.", "notice"));
     return;
   }
   if (!approved && state.attachments.some((attachment) => attachment.status === "error")) {

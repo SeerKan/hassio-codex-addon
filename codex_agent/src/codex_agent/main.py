@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from .database import Database, utcnow
 from .event_view import display_events
 from .models import CODEX_MODEL_IDS, CODEX_MODEL_OPTIONS, DEFAULT_CODEX_MODEL, normalize_model
 from .security import UserContext, classify_prompt, user_from_request
-from .settings import load_settings
+from .settings import DATA_DIR, load_settings
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -35,6 +36,18 @@ MAX_ATTACHMENT_MARKDOWN_CHARS = 200_000
 MAX_ATTACHMENTS_PER_RUN = 8
 ATTACHMENT_PREVIEW_CHARS = 600
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+ATTACHMENT_FILE_DIR = DATA_DIR / "attachments"
+IMAGE_CONTENT_TYPE_SUFFIXES = {
+    "image/gif": ".gif",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+}
+IMAGE_SUFFIXES = set(IMAGE_CONTENT_TYPE_SUFFIXES.values()) | {".jpeg", ".jpg"}
 
 
 @asynccontextmanager
@@ -196,6 +209,38 @@ def _safe_suffix(filename: str) -> str:
     return safe or ".upload"
 
 
+def _content_type_base(content_type: str | None) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
+def _is_image_upload(filename: str, content_type: str | None) -> bool:
+    base = _content_type_base(content_type)
+    suffix = Path(filename).suffix.lower()
+    return base.startswith("image/") or suffix in IMAGE_SUFFIXES
+
+
+def _image_suffix(filename: str, content_type: str | None) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix in IMAGE_SUFFIXES:
+        return ".jpg" if suffix == ".jpeg" else suffix
+    return IMAGE_CONTENT_TYPE_SUFFIXES.get(_content_type_base(content_type), ".image")
+
+
+def _store_image_attachment(
+    *,
+    user: UserContext,
+    attachment_id: str,
+    filename: str,
+    content_type: str | None,
+    temp_path: Path,
+) -> Path:
+    directory = ATTACHMENT_FILE_DIR / user.safe_id
+    directory.mkdir(parents=True, exist_ok=True)
+    stored_path = directory / f"{attachment_id}{_image_suffix(filename, content_type)}"
+    shutil.move(str(temp_path), str(stored_path))
+    return stored_path
+
+
 def _clean_attachment_ids(attachment_ids: list[str]) -> list[str]:
     cleaned = [str(attachment_id).strip() for attachment_id in attachment_ids if attachment_id]
     cleaned = list(dict.fromkeys(cleaned))
@@ -269,6 +314,7 @@ def _attachment_response(record: dict) -> dict:
         "id": record["id"],
         "filename": record["filename"],
         "content_type": record["content_type"],
+        "kind": record.get("kind", "markdown"),
         "size_bytes": record["size_bytes"],
         "markdown_chars": len(markdown),
         "preview": markdown[:ATTACHMENT_PREVIEW_CHARS],
@@ -334,25 +380,51 @@ async def create_attachment(request: Request, user: UserDep) -> dict:
         )
 
     filename = _safe_filename(upload.filename)
+    content_type = upload.content_type or "application/octet-stream"
     temp_path, size_bytes = await _store_upload_temporarily(upload)
+    attachment_id = str(uuid.uuid4())
+    kind = "markdown"
+    file_path = None
+    markdown = ""
     try:
-        markdown = _convert_attachment_with_markitdown(temp_path)
+        if _is_image_upload(filename, content_type):
+            kind = "image"
+            file_path = str(
+                _store_image_attachment(
+                    user=user,
+                    attachment_id=attachment_id,
+                    filename=filename,
+                    content_type=content_type,
+                    temp_path=temp_path,
+                )
+            )
+            temp_path = None
+        else:
+            markdown = _convert_attachment_with_markitdown(temp_path)
     except HTTPException:
         raise
     except Exception as exc:
+        action = "store image attachment" if kind == "image" else "convert"
         raise HTTPException(
             status_code=400,
-            detail=f"Could not convert {filename} with MarkItDown: {exc}",
+            detail=(
+                f"Could not {action} {filename}: {exc}"
+                if kind == "image"
+                else f"Could not convert {filename} with MarkItDown: {exc}"
+            ),
         ) from exc
     finally:
-        temp_path.unlink(missing_ok=True)
+        if temp_path:
+            temp_path.unlink(missing_ok=True)
 
     record = {
-        "id": str(uuid.uuid4()),
+        "id": attachment_id,
         "user_id": user.user_id,
         "filename": filename,
-        "content_type": upload.content_type or "application/octet-stream",
+        "content_type": content_type,
         "size_bytes": size_bytes,
+        "kind": kind,
+        "file_path": file_path,
         "markdown": markdown,
         "created_at": utcnow(),
     }

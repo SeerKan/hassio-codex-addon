@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from codex_agent import database as database_module
@@ -105,6 +107,53 @@ def test_attachment_upload_converts_with_markitdown_and_stores_markdown(
 
     stored = main.db.get_attachments("user-1", [attachment["id"]])
     assert stored[0]["markdown"] == "# Converted\n\nsource: .txt"
+    assert stored[0]["kind"] == "markdown"
+    assert stored[0]["file_path"] is None
+
+
+def test_image_attachment_upload_stores_file_without_markitdown(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(database_module, "DATA_DIR", tmp_path)
+    client = make_client(tmp_path, monkeypatch)
+    from codex_agent import main
+
+    monkeypatch.setattr(main, "ATTACHMENT_FILE_DIR", tmp_path / "attachments")
+    monkeypatch.setattr(
+        main,
+        "_convert_attachment_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(AssertionError("MarkItDown should not run")),
+    )
+
+    response = client.post(
+        "/api/attachments",
+        headers=HEADERS,
+        files={
+            "file": (
+                "WhatsApp Image 2026-07-10 at 17.47.21.jpeg",
+                b"\xff\xd8\xff\xe0fake-jpeg",
+                "image/jpeg",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    attachment = response.json()["attachment"]
+    assert attachment["kind"] == "image"
+    assert attachment["markdown_chars"] == 0
+
+    stored = main.db.get_attachments("user-1", [attachment["id"]])[0]
+    assert stored["markdown"] == ""
+    assert stored["kind"] == "image"
+    stored_path = Path(stored["file_path"])
+    assert stored_path.exists()
+    assert stored_path.suffix == ".jpg"
+
+    delete_response = client.delete(f"/api/attachments/{attachment['id']}", headers=HEADERS)
+
+    assert delete_response.status_code == 200
+    assert not stored_path.exists()
 
 
 def test_run_request_passes_converted_attachments_to_runner(tmp_path, monkeypatch) -> None:
@@ -136,6 +185,8 @@ def test_run_request_passes_converted_attachments_to_runner(tmp_path, monkeypatc
             "filename": "dashboard.pdf",
             "content_type": "application/pdf",
             "size_bytes": 42,
+            "kind": "markdown",
+            "file_path": None,
             "markdown": "# Dashboard\n\nlight.kitchen",
             "created_at": "2026-06-21T00:00:00+00:00",
         }

@@ -84,6 +84,8 @@ class Database:
                     filename TEXT NOT NULL,
                     content_type TEXT NOT NULL,
                     size_bytes INTEGER NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'markdown',
+                    file_path TEXT,
                     markdown TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -108,6 +110,12 @@ class Database:
 
             if not self._column_exists("runs", "session_id"):
                 self._conn.execute("ALTER TABLE runs ADD COLUMN session_id TEXT")
+            if not self._column_exists("attachments", "kind"):
+                self._conn.execute(
+                    "ALTER TABLE attachments ADD COLUMN kind TEXT NOT NULL DEFAULT 'markdown'"
+                )
+            if not self._column_exists("attachments", "file_path"):
+                self._conn.execute("ALTER TABLE attachments ADD COLUMN file_path TEXT")
 
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_sessions_user_updated_at ON "
@@ -360,10 +368,16 @@ class Database:
 
     def delete_attachment(self, user_id: str, attachment_id: str) -> int:
         with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT file_path FROM attachments WHERE user_id = ? AND id = ?",
+                (user_id, attachment_id),
+            ).fetchone()
             cur = self._conn.execute(
                 "DELETE FROM attachments WHERE user_id = ? AND id = ?",
                 (user_id, attachment_id),
             )
+        if row:
+            self._delete_attachment_file(row["file_path"])
         return cur.rowcount
 
     def create_auth_job(self, job_id: str, user_id: str) -> None:
@@ -437,6 +451,13 @@ class Database:
             deleted["runs"] = cur.rowcount
             cur = self._conn.execute("DELETE FROM auth_jobs WHERE started_at < ?", (cutoff_s,))
             deleted["auth_jobs"] = cur.rowcount
+            old_attachment_files = [
+                row["file_path"]
+                for row in self._conn.execute(
+                    "SELECT file_path FROM attachments WHERE created_at < ?",
+                    (cutoff_s,),
+                ).fetchall()
+            ]
             cur = self._conn.execute("DELETE FROM attachments WHERE created_at < ?", (cutoff_s,))
             deleted["attachments"] = cur.rowcount
             cur = self._conn.execute(
@@ -446,6 +467,8 @@ class Database:
                 """
             )
             deleted["sessions"] = cur.rowcount
+        for file_path in old_attachment_files:
+            self._delete_attachment_file(file_path)
         return deleted
 
     def _column_exists(self, table: str, column: str) -> bool:
@@ -459,3 +482,16 @@ class Database:
             cur = self._conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
             count += cur.rowcount
         return count
+
+    def _delete_attachment_file(self, file_path: str | None) -> None:
+        if not file_path:
+            return
+        path = Path(file_path)
+        try:
+            root = (DATA_DIR / "attachments").resolve(strict=False)
+            resolved = path.resolve(strict=False)
+            if not resolved.is_relative_to(root):
+                return
+            resolved.unlink(missing_ok=True)
+        except OSError:
+            return

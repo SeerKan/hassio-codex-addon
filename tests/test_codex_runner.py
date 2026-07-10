@@ -100,6 +100,20 @@ def test_selected_model_is_passed_to_codex_exec() -> None:
     assert command[command.index("--model") + 1] == "gpt-5.4-mini"
 
 
+def test_image_paths_are_passed_to_codex_exec(tmp_path) -> None:
+    image_path = tmp_path / "photo.jpg"
+    image_path.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
+
+    command = make_runner()._build_command(
+        mode="ask",
+        yolo=False,
+        workspace=Path("/homeassistant"),
+        image_paths=[image_path],
+    )
+
+    assert command[command.index("--image") + 1] == str(image_path)
+
+
 def test_managed_config_registers_home_assistant_mcp_without_token() -> None:
     config = tomllib.loads(MANAGED_CODEX_CONFIG)
     server = config["mcp_servers"]["home-assistant"]
@@ -218,12 +232,63 @@ def test_prompt_includes_markitdown_attachment_context() -> None:
     )
 
     assert (
-        "User-provided attachments for this request, converted to Markdown by MarkItDown"
+        "User-provided attachments for this request:"
         in prompt
     )
     assert "### Attachment 1: inventory.xlsx" in prompt
+    assert "- kind: MarkItDown markdown" in prompt
     assert "| light.kitchen | Kitchen |" in prompt
     assert "User request:\nUse the attached inventory." in prompt
+
+
+def test_prompt_includes_image_attachment_context(tmp_path) -> None:
+    runner = make_runner()
+    user = UserContext(user_id="user-1", username="zoli", display_name="Zoltan")
+    assessment = RiskAssessment(level="low", approval_required=False)
+    image_path = tmp_path / "photo.jpg"
+    image_path.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
+
+    prompt = runner._build_prompt(
+        user=user,
+        prompt="What is in this picture?",
+        mode="ask",
+        session_id="session-1",
+        session_history=[],
+        assessment=assessment,
+        ha_context={"core": {"version": "test"}},
+        secret_access_approved=False,
+        attachments=[
+            {
+                "filename": "photo.jpg",
+                "content_type": "image/jpeg",
+                "kind": "image",
+                "file_path": str(image_path),
+                "size_bytes": 12,
+                "markdown": "",
+            }
+        ],
+    )
+
+    assert "### Attachment 1: photo.jpg" in prompt
+    assert "- kind: image" in prompt
+    assert f"- local path: {image_path}" in prompt
+    assert "--image" in prompt
+
+
+def test_attachment_image_paths_only_include_existing_images(tmp_path) -> None:
+    runner = make_runner()
+    image_path = tmp_path / "photo.jpg"
+    image_path.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
+
+    paths = runner._attachment_image_paths(
+        [
+            {"kind": "image", "file_path": str(image_path)},
+            {"kind": "image", "file_path": str(tmp_path / "missing.jpg")},
+            {"kind": "markdown", "file_path": str(image_path)},
+        ]
+    )
+
+    assert paths == [image_path]
 
 
 def test_prompt_prefers_home_assistant_mcp_tools() -> None:

@@ -421,7 +421,13 @@ class CodexRunner:
             before = collect_snapshot(max_file_kb=self.settings.max_snapshot_file_kb)
 
         workspace = self._workspace_root()
-        command = self._build_command(mode=mode, model=model, yolo=yolo, workspace=workspace)
+        command = self._build_command(
+            mode=mode,
+            model=model,
+            yolo=yolo,
+            workspace=workspace,
+            image_paths=self._attachment_image_paths(attachments),
+        )
         full_prompt = self._build_prompt(
             user=user,
             prompt=prompt,
@@ -506,6 +512,7 @@ class CodexRunner:
         model: str | None = None,
         yolo: bool,
         workspace: Path | None = None,
+        image_paths: list[Path] | None = None,
     ) -> list[str]:
         command = ["codex", "exec", "--json", "--skip-git-repo-check"]
         selected_model = model or self.settings.codex_model
@@ -518,6 +525,8 @@ class CodexRunner:
         for path in MAPPED_PATHS:
             if path.exists() and path != (workspace or self._workspace_root()):
                 command.extend(["--add-dir", str(path)])
+        for image_path in image_paths or []:
+            command.extend(["--image", str(image_path)])
 
         if yolo:
             command.append("--dangerously-bypass-approvals-and-sandbox")
@@ -551,7 +560,7 @@ class CodexRunner:
         if attachment_context:
             attachment_section = f"""
 
-User-provided attachments for this request, converted to Markdown by MarkItDown:
+User-provided attachments for this request:
 {attachment_context}
 """
         return f"""
@@ -736,7 +745,22 @@ User request:
 
             filename = self._clean_for_prompt(attachment.get("filename", "attachment"))
             content_type = self._clean_for_prompt(attachment.get("content_type", "unknown"))
+            kind = self._clean_for_prompt(attachment.get("kind", "markdown")) or "markdown"
             size_bytes = attachment.get("size_bytes", 0)
+            if kind == "image":
+                file_path = self._clean_for_prompt(attachment.get("file_path", ""))
+                block = (
+                    f"### Attachment {index}: {filename}\n"
+                    "- kind: image\n"
+                    f"- content type: {content_type}\n"
+                    f"- original size: {size_bytes} bytes\n"
+                    f"- local path: {file_path}\n"
+                    "- this image was attached to the Codex CLI invocation with --image"
+                )
+                rendered.append(block)
+                used += len(block)
+                continue
+
             raw_markdown = clean_terminal_text(str(attachment.get("markdown", ""))).strip()
             safe_markdown = raw_markdown.replace("```", "` ` `")
             markdown_limit = min(self.ATTACHMENT_FILE_MAX_CHARS, max(0, remaining - 360))
@@ -753,6 +777,7 @@ User request:
 
             block = (
                 f"### Attachment {index}: {filename}\n"
+                "- kind: MarkItDown markdown\n"
                 f"- content type: {content_type}\n"
                 f"- original size: {size_bytes} bytes\n\n"
                 "```markdown\n"
@@ -763,6 +788,19 @@ User request:
             used += len(block)
 
         return "\n\n".join(rendered)
+
+    def _attachment_image_paths(self, attachments: list[dict[str, Any]]) -> list[Path]:
+        image_paths: list[Path] = []
+        for attachment in attachments:
+            if attachment.get("kind") != "image":
+                continue
+            file_path = attachment.get("file_path")
+            if not isinstance(file_path, str) or not file_path:
+                continue
+            path = Path(file_path)
+            if path.exists():
+                image_paths.append(path)
+        return image_paths
 
     def _clean_for_prompt(self, value: Any) -> str:
         if not isinstance(value, str):

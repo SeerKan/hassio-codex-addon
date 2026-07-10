@@ -73,9 +73,11 @@ def test_sidebar_has_attachment_upload_wiring() -> None:
     assert 'id="fileInput" type="file" multiple hidden' in index
     assert 'id="attachmentTray"' in index
     assert "function uploadFiles" in app
+    assert "function isImageFile" in app
+    assert "Uploading image" in app
     assert "api/attachments" in app
     assert "attachment_ids" in app
-    assert "Wait for file conversion to finish" in app
+    assert "Wait for file upload or conversion to finish" in app
     assert ".attachment-chip" in styles
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.23
+
+- Accept uploaded image attachments without forcing MarkItDown conversion.
+- Pass image attachments to the Codex CLI with `--image` while keeping document
+  attachments converted to Markdown.
+- Store uploaded image files under add-on data and remove them with attachment
+  deletion or retention cleanup.
+
 ## 0.1.22
 
 - Add GPT-5.6 Sol, Terra, and Luna to the model dropdown.
