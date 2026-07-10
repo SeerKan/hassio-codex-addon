@@ -4,6 +4,25 @@ from typing import Final
 
 CODEX_MODEL_OPTIONS: Final[list[dict[str, str]]] = [
     {
+        "id": "gpt-5.6-sol",
+        "label": "GPT-5.6 Sol",
+        "description": (
+            "Most capable GPT-5.6 option for complex Home Assistant coding and reasoning work."
+        ),
+    },
+    {
+        "id": "gpt-5.6-terra",
+        "label": "GPT-5.6 Terra",
+        "description": (
+            "Balanced GPT-5.6 option for everyday Codex work across capability, speed, and cost."
+        ),
+    },
+    {
+        "id": "gpt-5.6-luna",
+        "label": "GPT-5.6 Luna",
+        "description": "Fastest GPT-5.6 option for quick inspections and cost-sensitive tasks.",
+    },
+    {
         "id": "gpt-5.5",
         "label": "GPT-5.5",
         "description": "Newest frontier model; best default for complex Home Assistant work.",
@@ -25,11 +44,10 @@ CODEX_MODEL_OPTIONS: Final[list[dict[str, str]]] = [
     },
 ]
 
-DEFAULT_CODEX_MODEL: Final[str] = CODEX_MODEL_OPTIONS[0]["id"]
+DEFAULT_CODEX_MODEL: Final[str] = "gpt-5.6-terra"
 CODEX_MODEL_IDS: Final[set[str]] = {model["id"] for model in CODEX_MODEL_OPTIONS}
 
 
 def normalize_model(model: str | None) -> str | None:
     value = (model or "").strip()
     return value or None
-

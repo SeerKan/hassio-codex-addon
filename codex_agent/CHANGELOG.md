@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.22
+
+- Add GPT-5.6 Sol, Terra, and Luna to the model dropdown.
+- Make GPT-5.6 Terra the default model for new users.
+- Update the bundled Codex CLI to 0.144.0 for GPT-5.6 support.
+
 ## 0.1.21
 
 - Bundle the Home Assistant best-practices Agent Skill inside the add-on image.

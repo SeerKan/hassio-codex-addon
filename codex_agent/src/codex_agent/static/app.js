@@ -1,11 +1,26 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.21";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.22";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const MAX_ATTACHMENT_LABEL = 42;
 const memoryStore = {};
 const FALLBACK_MODEL_OPTIONS = [
+  {
+    id: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    description: "Most capable GPT-5.6 option for complex Home Assistant coding and reasoning work.",
+  },
+  {
+    id: "gpt-5.6-terra",
+    label: "GPT-5.6 Terra",
+    description: "Balanced GPT-5.6 option for everyday Codex work across capability, speed, and cost.",
+  },
+  {
+    id: "gpt-5.6-luna",
+    label: "GPT-5.6 Luna",
+    description: "Fastest GPT-5.6 option for quick inspections and cost-sensitive tasks.",
+  },
   {
     id: "gpt-5.5",
     label: "GPT-5.5",
