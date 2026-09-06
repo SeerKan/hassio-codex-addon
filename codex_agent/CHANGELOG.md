@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.24
+
+- Use a directly tappable file picker and copy selected file bytes for mobile uploads.
+- Preserve completed attachments and draft text across page reloads in the same tab;
+  show interrupted uploads with a retry instruction.
+- Limit upload size/count in the composer, time out stalled uploads, and reject
+  invalid upload responses instead of silently dropping attachments.
+- Add Chromium and WebKit regression coverage for mobile attachment flows.
+
 ## 0.1.23
 
 - Accept uploaded image attachments without forcing MarkItDown conversion.

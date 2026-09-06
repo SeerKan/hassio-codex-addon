@@ -131,10 +131,12 @@ __MODEL_OPTIONS__
               ></textarea>
             </div>
             <div class="composer-actions">
-              <button id="attachButton" class="secondary" type="button">Attach</button>
+              <label id="attachButton" class="secondary attachment-picker">
+                <span>Attach</span>
+                <input id="fileInput" type="file" multiple aria-label="Attach files" />
+              </label>
               <button id="runButton" class="primary" type="submit">Send</button>
             </div>
-            <input id="fileInput" type="file" multiple hidden />
           </form>
         </section>
       </section>

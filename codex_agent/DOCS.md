@@ -113,6 +113,13 @@ Omit `--skip-ha` when you also want a Home Assistant Core container on
 `http://127.0.0.1:8123/`. The fake Supervisor remains the add-on's Supervisor
 API target so tests can run without a full HA OS installation.
 
+The pytest suite includes mobile attachment regressions in Chromium and WebKit.
+After installing `requirements-dev.txt`, install both browser engines once with
+`playwright install chromium webkit` (add `--with-deps` on Linux), then run `pytest`.
+These checks cover native picker activation, upload bytes, repeated selection,
+reload recovery, failures, and timeouts. A real Companion app device check is
+still needed to verify its native photo picker and app resume behavior.
+
 ## Current v1 Boundaries
 
 - HA OS is the target install type.

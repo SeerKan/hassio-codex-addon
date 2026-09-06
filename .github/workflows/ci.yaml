@@ -23,4 +23,6 @@ jobs:
       - name: Validate add-on metadata
         run: python scripts/validate_addon.py
       - name: Test
-        run: pytest
+        run: |
+          playwright install --with-deps chromium webkit
+          pytest

@@ -70,7 +70,9 @@ def test_sidebar_has_attachment_upload_wiring() -> None:
     styles = (ROOT / "codex_agent/src/codex_agent/static/styles.css").read_text(encoding="utf-8")
 
     assert 'id="attachButton"' in index
-    assert 'id="fileInput" type="file" multiple hidden' in index
+    assert 'id="fileInput" type="file" multiple aria-label="Attach files"' in index
+    assert '<label id="attachButton"' in index
+    assert '$("fileInput")?.click()' not in app
     assert 'id="attachmentTray"' in index
     assert "function uploadFiles" in app
     assert "function isImageFile" in app

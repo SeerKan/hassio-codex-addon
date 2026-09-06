@@ -1,9 +1,12 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.23";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.24";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const MAX_ATTACHMENT_LABEL = 42;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENTS = 8;
+const UPLOAD_TIMEOUT_MS = 120_000;
 const memoryStore = {};
 const FALLBACK_MODEL_OPTIONS = [
   {
@@ -60,7 +63,9 @@ const state = {
   currentDiff: "",
   attachments: [],
   uploadCounter: 0,
+  fileSelectionCounter: 0,
   uploadingAttachments: 0,
+  composerStorageKey: null,
   modeUserChanged: false,
   modelUserChanged: false,
 };
@@ -155,10 +160,11 @@ function apiUrl(path) {
   return new URL(cleanPath, base).toString();
 }
 
-async function uploadApi(path, formData) {
+async function uploadApi(path, formData, signal) {
   const response = await fetch(apiUrl(path), {
     method: "POST",
     body: formData,
+    signal,
   });
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
@@ -167,6 +173,9 @@ async function uploadApi(path, formData) {
     error.status = response.status;
     error.payload = payload;
     throw error;
+  }
+  if (!payload?.attachment?.id) {
+    throw new Error("Upload was not accepted. Reopen the add-on from Home Assistant and try again.");
   }
   return payload;
 }
@@ -202,6 +211,7 @@ function resolveSessionId(payload) {
 }
 
 async function renderStatus(payload, { loadConversation = true } = {}) {
+  restoreComposerDraft(payload.user.id);
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
     setText("authState", payload.auth.auth_mode || "Codex");
@@ -919,6 +929,7 @@ function attachmentDescription(attachment) {
 }
 
 function renderAttachments() {
+  saveComposerDraft();
   const tray = $("attachmentTray");
   if (!tray) return;
   tray.innerHTML = "";
@@ -951,8 +962,13 @@ function renderAttachments() {
 async function uploadFiles(files) {
   const fileList = Array.from(files || []);
   if (!fileList.length) return;
-
-  for (const file of fileList) {
+  const available = Math.max(0, MAX_ATTACHMENTS - state.attachments.length);
+  if (fileList.length > available) {
+    appendChatNode(messageNode("Attachments", "Attach at most 8 files to one message.", "notice"));
+  }
+  // Record the whole selection before awaiting anything so a reload also reports
+  // files still waiting for their turn. Read/upload sequentially to bound memory.
+  const queue = fileList.slice(0, available).map((file) => {
     const pending = {
       clientId: `upload-${++state.uploadCounter}`,
       filename: file.name || "attachment",
@@ -962,23 +978,41 @@ async function uploadFiles(files) {
       size_bytes: file.size || 0,
     };
     state.attachments.push(pending);
-    state.uploadingAttachments += 1;
-    renderAttachments();
+    return { file, pending };
+  });
+  state.uploadingAttachments += queue.length;
+  renderAttachments();
 
-    const formData = new FormData();
-    formData.append("file", file);
-    uploadApi("api/attachments", formData)
-      .then((payload) => {
-        Object.assign(pending, payload.attachment || {}, { status: "ready" });
-      })
-      .catch((error) => {
-        pending.status = "error";
-        pending.error = error.message || "Upload failed";
-      })
-      .finally(() => {
-        state.uploadingAttachments = Math.max(0, state.uploadingAttachments - 1);
-        renderAttachments();
+  for (const { file, pending } of queue) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    try {
+      if (!state.attachments.includes(pending)) continue;
+      if (!file.size) throw new Error("Attachment is empty.");
+      if (file.size > MAX_ATTACHMENT_BYTES) throw new Error("Attachment is larger than the 25 MB limit.");
+      // Copy mobile picker files before releasing them. Disk-backed Files can lose
+      // their WebKit sandbox access while an upload is being prepared or sent.
+      // https://bugs.webkit.org/show_bug.cgi?id=319985
+      const aborted = new Promise((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(new Error("Upload timed out.")), { once: true });
       });
+      const bytes = await Promise.race([file.arrayBuffer(), aborted]);
+      if (controller.signal.aborted) throw new Error("Upload timed out. Remove the file and try again.");
+      const formData = new FormData();
+      formData.append("file", new Blob([bytes], { type: file.type || "application/octet-stream" }), file.name || "attachment");
+      const payload = await uploadApi("api/attachments", formData, controller.signal);
+      Object.assign(pending, payload.attachment, { status: "ready" });
+      if (!state.attachments.includes(pending)) deleteUploadedAttachment(pending.id);
+    } catch (error) {
+      pending.status = "error";
+      pending.error = controller.signal.aborted
+        ? "Upload timed out. Remove the file and try again."
+        : error.message || "Upload failed";
+    } finally {
+      clearTimeout(timeout);
+      state.uploadingAttachments = Math.max(0, state.uploadingAttachments - 1);
+      renderAttachments();
+    }
   }
 }
 
@@ -1003,11 +1037,48 @@ async function removeAttachment(clientId) {
   if (index < 0) return;
   const [attachment] = state.attachments.splice(index, 1);
   renderAttachments();
-  if (attachment?.id) {
-    fetch(apiUrl(`api/attachments/${encodeURIComponent(attachment.id)}`), { method: "DELETE" }).catch(() => {
-      // The attachment will still expire with retention cleanup.
-    });
+  if (attachment?.id) deleteUploadedAttachment(attachment.id);
+}
+
+function deleteUploadedAttachment(id) {
+  fetch(apiUrl(`api/attachments/${encodeURIComponent(id)}`), { method: "DELETE" }).catch(() => {
+    // The attachment will still expire with retention cleanup.
+  });
+}
+
+function saveComposerDraft() {
+  if (!state.composerStorageKey) return;
+  try {
+    sessionStorage.setItem(state.composerStorageKey, JSON.stringify({
+      prompt: $("prompt")?.value || "",
+      attachments: state.attachments,
+    }));
+  } catch {
+    // Private/embedded browsers may deny storage. Uploading must still work.
   }
+}
+
+function restoreComposerDraft(userId) {
+  if (state.composerStorageKey || !userId) return;
+  state.composerStorageKey = `codex_composer:${userId}`;
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(state.composerStorageKey) || "null");
+    if (!draft) return;
+    if (!$("prompt").value && typeof draft.prompt === "string") $("prompt").value = draft.prompt;
+    if (!state.attachments.length && Array.isArray(draft.attachments)) {
+      state.attachments = draft.attachments.slice(0, MAX_ATTACHMENTS).map((attachment) => ({
+        ...attachment,
+        clientId: `upload-${++state.uploadCounter}`,
+        ...(attachment.status === "uploading" ? {
+          status: "error",
+          error: "Upload interrupted by a page reload. Remove the file and attach it again.",
+        } : {}),
+      }));
+    }
+  } catch {
+    // Ignore unavailable storage or an invalid saved draft.
+  }
+  renderAttachments();
 }
 
 function userMessageText(prompt, attachments = []) {
@@ -1632,10 +1703,16 @@ function bind() {
   });
 
   $("prompt")?.addEventListener("keydown", handlePromptKeydown);
-  $("attachButton")?.addEventListener("click", () => $("fileInput")?.click());
-  $("fileInput")?.addEventListener("change", (event) => {
-    uploadFiles(event.target.files);
-    event.target.value = "";
+  $("prompt")?.addEventListener("input", saveComposerDraft);
+  window.addEventListener("pagehide", saveComposerDraft);
+  $("fileInput")?.addEventListener("change", async (event) => {
+    const input = event.currentTarget;
+    const selection = ++state.fileSelectionCounter;
+    try {
+      await uploadFiles(input.files);
+    } finally {
+      if (selection === state.fileSelectionCounter) input.value = "";
+    }
   });
   $("composer")?.addEventListener("submit", (event) => {
     event.preventDefault();
