@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from codex_agent import database as database_module
@@ -30,7 +31,8 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     return TestClient(main.app)
 
 
-def test_user_preferences_round_trip(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+def test_user_preferences_round_trip(tmp_path, monkeypatch, model) -> None:
     client = make_client(tmp_path, monkeypatch)
 
     initial = client.get("/api/status", headers=HEADERS)
@@ -41,13 +43,13 @@ def test_user_preferences_round_trip(tmp_path, monkeypatch) -> None:
     saved = client.post(
         "/api/preferences",
         headers=HEADERS,
-        json={"mode": "apply", "model": "gpt-5.4-mini"},
+        json={"mode": "apply", "model": model},
     )
 
     assert saved.status_code == 200
     assert saved.json()["preferences"] == {
         "mode": "apply",
-        "model": "gpt-5.4-mini",
+        "model": model,
         "persisted": True,
     }
 
@@ -57,7 +59,8 @@ def test_user_preferences_round_trip(tmp_path, monkeypatch) -> None:
     assert status.json()["preferences"] == saved.json()["preferences"]
 
 
-def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatch, model) -> None:
     client = make_client(tmp_path, monkeypatch)
 
     response = client.post(
@@ -66,7 +69,7 @@ def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatc
         json={
             "prompt": "Inspect the dashboard",
             "mode": "propose",
-            "model": "gpt-5.4-mini",
+            "model": model,
         },
     )
 
@@ -76,7 +79,7 @@ def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatc
 
     assert status.json()["preferences"] == {
         "mode": "propose",
-        "model": "gpt-5.4-mini",
+        "model": model,
         "persisted": True,
     }
 

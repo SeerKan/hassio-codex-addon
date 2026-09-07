@@ -25,6 +25,16 @@ available in your OpenAI workspace, use the fallback import flow and paste an
 `auth.json` contains sensitive access and refresh tokens. Do not share it, paste
 it into issue trackers, or commit it to git.
 
+## Models
+
+Choose **GPT-6 Astra** in the sidebar model dropdown for complex work across
+code and tools. Version 0.1.25 bundles Codex CLI 0.153.4. GPT-5.6 Terra remains
+the default, and existing model preferences are preserved.
+
+Astra availability depends on your signed-in account and OpenAI rollout. See
+the [official Codex model documentation](https://developers.openai.com/codex/models#gpt-6-astra)
+for access details.
+
 ## Home Assistant Access
 
 The add-on uses:

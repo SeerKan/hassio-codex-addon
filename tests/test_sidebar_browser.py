@@ -108,6 +108,19 @@ def sidebar(browser):
     thread.join()
 
 
+def test_astra_fallback_selection_survives_reload_and_is_sent(sidebar):
+    page, _, runs, _ = sidebar
+    model_select = page.get_by_role("combobox", name="Codex model")
+    expect(model_select).to_have_value("gpt-5.6-terra")
+    model_select.select_option(label="GPT-6 Astra")
+    page.reload()
+    expect(model_select).to_have_value("gpt-6-astra")
+    page.locator("#prompt").fill("Inspect the dashboard")
+    with page.expect_response("**/api/runs"):
+        page.get_by_role("button", name="Send", exact=True).click()
+    assert runs[-1]["model"] == "gpt-6-astra"
+
+
 def pick_photo(page):
     # Exercise the actual tap target; setting input files alone misses picker wiring bugs.
     with page.expect_file_chooser() as chooser:

@@ -23,16 +23,17 @@ def test_sidebar_has_ingress_base_and_model_fallbacks() -> None:
     assert "static/styles.css?v=" not in index
     assert "__MODEL_OPTIONS__" in index
     assert "FALLBACK_MODEL_OPTIONS" in app
+    assert "gpt-6-astra" in app
     assert "gpt-5.6-sol" in app
     assert "gpt-5.6-terra" in app
     assert "gpt-5.6-luna" in app
     assert "document.baseURI" in app
 
 
-def test_sidebar_ships_codex_cli_version_for_gpt_56() -> None:
+def test_sidebar_ships_codex_cli_version_for_astra() -> None:
     dockerfile = (ROOT / "codex_agent/Dockerfile").read_text(encoding="utf-8")
 
-    assert "ARG CODEX_CLI_VERSION=0.144.0" in dockerfile
+    assert "ARG CODEX_CLI_VERSION=0.153.4" in dockerfile
 
 
 def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:

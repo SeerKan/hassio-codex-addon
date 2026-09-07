@@ -4,6 +4,11 @@ from typing import Final
 
 CODEX_MODEL_OPTIONS: Final[list[dict[str, str]]] = [
     {
+        "id": "gpt-6-astra",
+        "label": "GPT-6 Astra",
+        "description": "Most capable model for complex Home Assistant work across code and tools.",
+    },
+    {
         "id": "gpt-5.6-sol",
         "label": "GPT-5.6 Sol",
         "description": (
@@ -25,7 +30,7 @@ CODEX_MODEL_OPTIONS: Final[list[dict[str, str]]] = [
     {
         "id": "gpt-5.5",
         "label": "GPT-5.5",
-        "description": "Newest frontier model; best default for complex Home Assistant work.",
+        "description": "Previous-generation model for complex Home Assistant work.",
     },
     {
         "id": "gpt-5.4",

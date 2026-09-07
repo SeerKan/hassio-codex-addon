@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.25
+
+- Add GPT-6 Astra (`gpt-6-astra`) to the model dropdown and fallback choices.
+- Update the bundled Codex CLI to 0.153.4 for Astra support.
+- Keep GPT-5.6 Terra as the default, including when using fallback model choices.
+
 ## 0.1.24
 
 - Use a directly tappable file picker and copy selected file bytes for mobile uploads.

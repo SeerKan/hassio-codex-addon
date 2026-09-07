@@ -1,6 +1,6 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.24";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.25";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
 const MAX_ATTACHMENT_LABEL = 42;
@@ -9,6 +9,11 @@ const MAX_ATTACHMENTS = 8;
 const UPLOAD_TIMEOUT_MS = 120_000;
 const memoryStore = {};
 const FALLBACK_MODEL_OPTIONS = [
+  {
+    id: "gpt-6-astra",
+    label: "GPT-6 Astra",
+    description: "Most capable model for complex Home Assistant work across code and tools.",
+  },
   {
     id: "gpt-5.6-sol",
     label: "GPT-5.6 Sol",
@@ -27,7 +32,7 @@ const FALLBACK_MODEL_OPTIONS = [
   {
     id: "gpt-5.5",
     label: "GPT-5.5",
-    description: "Newest frontier model; best default for complex Home Assistant work.",
+    description: "Previous-generation model for complex Home Assistant work.",
   },
   {
     id: "gpt-5.4",
@@ -293,7 +298,9 @@ function renderModelOptions(models) {
   const serverOptions = Array.isArray(models.options) ? models.options.slice(0, 10) : [];
   const options = serverOptions.length ? serverOptions : FALLBACK_MODEL_OPTIONS;
   state.modelOptions = options;
-  const defaultModel = models.default || options[0]?.id || "";
+  const defaultModel = models.default
+    || options.find((model) => model.id === "gpt-5.6-terra")?.id
+    || options[0]?.id || "";
   const selectedStillAvailable = options.some((model) => model.id === state.selectedModel);
   if (!state.selectedModel || !selectedStillAvailable) {
     state.selectedModel = defaultModel;

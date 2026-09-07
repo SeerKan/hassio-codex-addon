@@ -2,6 +2,8 @@ import asyncio
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from codex_agent import codex_runner
 from codex_agent.codex_runner import MANAGED_CODEX_CONFIG, CodexRunner, clean_terminal_text
 from codex_agent.database import Database
@@ -89,15 +91,16 @@ def test_live_search_can_be_left_as_default() -> None:
     assert 'web_search="live"' not in command
 
 
-def test_selected_model_is_passed_to_codex_exec() -> None:
+@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+def test_selected_model_is_passed_to_codex_exec(model) -> None:
     command = make_runner()._build_command(
         mode="ask",
-        model="gpt-5.4-mini",
+        model=model,
         yolo=False,
         workspace=Path("/homeassistant"),
     )
 
-    assert command[command.index("--model") + 1] == "gpt-5.4-mini"
+    assert command[command.index("--model") + 1] == model
 
 
 def test_image_paths_are_passed_to_codex_exec(tmp_path) -> None:

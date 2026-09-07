@@ -157,7 +157,7 @@ def smoke_test() -> None:
     assert "static/styles.css?v=" not in html
     assert 'id="sessionsList"' in html
     assert 'id="attachButton"' in html
-    assert 'id="fileInput" type="file" multiple hidden' in html
+    assert 'id="fileInput" type="file" multiple aria-label="Attach files"' in html
     assert 'id="attachmentTray"' in html
     print(f"Smoke checks passed for add-on {status['app_version']}.")
 
