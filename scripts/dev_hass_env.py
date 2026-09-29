@@ -159,6 +159,9 @@ def smoke_test() -> None:
     assert 'id="attachButton"' in html
     assert 'id="fileInput" type="file" multiple aria-label="Attach files"' in html
     assert 'id="attachmentTray"' in html
+    assert 'id="dictateButton"' in html
+    assert 'id="dictationLanguage"' in html
+    assert 'id="dictationStatus"' in html
     print(f"Smoke checks passed for add-on {status['app_version']}.")
 
 

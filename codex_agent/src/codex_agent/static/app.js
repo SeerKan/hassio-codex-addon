@@ -1,8 +1,9 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.25";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.26";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
+const DICTATION_LANGUAGE_KEY = "codex_dictation_language";
 const MAX_ATTACHMENT_LABEL = 42;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENTS = 8;
@@ -73,6 +74,14 @@ const state = {
   composerStorageKey: null,
   modeUserChanged: false,
   modelUserChanged: false,
+};
+
+const dictation = {
+  recognition: null,
+  stopping: false,
+  failed: false,
+  startupTimer: null,
+  committedResults: new Set(),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1507,6 +1516,10 @@ function schedulePoll() {
 async function submitRun(approved = false) {
   const promptBox = $("prompt");
   if (!promptBox) return;
+  if (!approved && dictation.recognition) {
+    setDictationStatus("Stop dictation and review the text before sending.");
+    return;
+  }
   if (!approved && state.uploadingAttachments > 0) {
     setRunState("Attachments uploading");
     appendChatNode(messageNode("Attachments", "Wait for file upload or conversion to finish, then send again.", "notice"));
@@ -1618,6 +1631,148 @@ function insertTextareaNewline(textarea) {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function setDictationStatus(message) {
+  setText("dictationStatus", message);
+}
+
+function setDictationButton(listening) {
+  const button = $("dictateButton");
+  if (!button) return;
+  button.textContent = listening ? "Stop" : "Dictate";
+  button.setAttribute("aria-pressed", String(listening));
+  const language = $("dictationLanguage");
+  if (language) language.disabled = listening;
+}
+
+function clearDictationStartupTimer() {
+  clearTimeout(dictation.startupTimer);
+  dictation.startupTimer = null;
+}
+
+function dictationErrorMessage(error) {
+  if (error === "not-allowed" || error === "service-not-allowed") {
+    return "Microphone access was denied. Allow it in your browser settings and try again.";
+  }
+  if (error === "audio-capture") return "No microphone was found. Check your device microphone.";
+  if (error === "no-speech") return "No speech was heard. Try again.";
+  if (error === "network") return "Speech recognition needs a network connection. Try again when online.";
+  if (error === "language-not-supported" || error === "language-unavailable") {
+    return "This dictation language is unavailable. Choose another language.";
+  }
+  return "Dictation could not start here. Try your keyboard's microphone instead.";
+}
+
+function startDictation() {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    setDictationStatus("Voice dictation is unavailable here. Use your keyboard's microphone instead.");
+    return;
+  }
+  let recognition;
+  try {
+    recognition = new Recognition();
+  } catch {
+    setDictationStatus("Dictation could not start here. Try your keyboard's microphone instead.");
+    return;
+  }
+  const selectedLanguage = $("dictationLanguage")?.value || "browser";
+  recognition.lang = selectedLanguage === "browser" ? (navigator.language || "en-US") : selectedLanguage;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  dictation.recognition = recognition;
+  dictation.stopping = false;
+  dictation.failed = false;
+  dictation.committedResults = new Set();
+  recognition.onstart = () => {
+    if (dictation.recognition === recognition) {
+      clearDictationStartupTimer();
+      setDictationStatus("Listening… Speak your message, then tap Stop.");
+    }
+  };
+  recognition.onresult = (event) => {
+    if (dictation.recognition !== recognition) return;
+    const prompt = $("prompt");
+    let interim = "";
+    for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      const result = event.results[index];
+      const words = result[0]?.transcript?.trim();
+      if (!words) continue;
+      if (result.isFinal && !dictation.committedResults.has(index)) {
+        dictation.committedResults.add(index);
+        if (prompt) {
+          const start = prompt.selectionStart ?? prompt.value.length;
+          const end = prompt.selectionEnd ?? start;
+          const before = prompt.value.slice(0, start);
+          const after = prompt.value.slice(end);
+          const prefix = before && !/\s$/.test(before) ? " " : "";
+          const suffix = after && !/^[\s.,!?;:]/.test(after) ? " " : "";
+          prompt.setRangeText(`${prefix}${words}${suffix}`, start, end, "end");
+          prompt.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      } else if (!result.isFinal) {
+        interim = words;
+      }
+    }
+    setDictationStatus(interim ? `Hearing: ${interim}` : "Listening… Speak your message, then tap Stop.");
+  };
+  recognition.onerror = (event) => {
+    if (dictation.recognition !== recognition) return;
+    clearDictationStartupTimer();
+    dictation.failed = true;
+    dictation.recognition = null;
+    dictation.stopping = false;
+    setDictationButton(false);
+    setDictationStatus(dictationErrorMessage(event.error));
+    try { recognition.abort(); } catch { /* Recognition has already ended. */ }
+  };
+  recognition.onend = () => {
+    if (dictation.recognition !== recognition) return;
+    clearDictationStartupTimer();
+    dictation.recognition = null;
+    dictation.stopping = false;
+    setDictationButton(false);
+    if (!dictation.failed) setDictationStatus("Dictation stopped. Review the text, then send.");
+  };
+  setDictationButton(true);
+  setDictationStatus("Starting microphone…");
+  dictation.startupTimer = setTimeout(() => {
+    if (dictation.recognition !== recognition) return;
+    dictation.failed = true;
+    dictation.recognition = null;
+    setDictationButton(false);
+    setDictationStatus("The microphone did not start here. Try your keyboard's microphone instead.");
+    try { recognition.abort(); } catch { /* Recognition may already be unavailable. */ }
+  }, 10_000);
+  try {
+    recognition.start();
+  } catch {
+    clearDictationStartupTimer();
+    dictation.recognition = null;
+    setDictationButton(false);
+    setDictationStatus("Dictation could not start here. Try your keyboard's microphone instead.");
+  }
+}
+
+function toggleDictation() {
+  if (!dictation.recognition) {
+    startDictation();
+    return;
+  }
+  if (dictation.stopping) return;
+  dictation.stopping = true;
+  setDictationStatus("Stopping dictation…");
+  try {
+    dictation.recognition.stop();
+  } catch {
+    clearDictationStartupTimer();
+    dictation.recognition = null;
+    dictation.stopping = false;
+    setDictationButton(false);
+    setDictationStatus("Dictation stopped. Review the text, then send.");
+  }
+}
+
 async function startLogin() {
   const payload = await api("api/auth/start", { method: "POST" });
   const output = $("loginOutput");
@@ -1711,7 +1866,26 @@ function bind() {
 
   $("prompt")?.addEventListener("keydown", handlePromptKeydown);
   $("prompt")?.addEventListener("input", saveComposerDraft);
-  window.addEventListener("pagehide", saveComposerDraft);
+  const languageSelect = $("dictationLanguage");
+  if (languageSelect) {
+    const savedLanguage = loadStoredChoice(DICTATION_LANGUAGE_KEY, "browser");
+    if (["browser", "ro-RO", "en-US"].includes(savedLanguage)) languageSelect.value = savedLanguage;
+    languageSelect.addEventListener("change", () => storeChoice(DICTATION_LANGUAGE_KEY, languageSelect.value));
+  }
+  if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+    $("dictateButton")?.addEventListener("click", toggleDictation);
+  } else {
+    const button = $("dictateButton");
+    if (button) button.disabled = true;
+    setDictationStatus("Voice dictation is unavailable here. Use your keyboard's microphone instead.");
+  }
+  window.addEventListener("pagehide", () => {
+    clearDictationStartupTimer();
+    if (dictation.recognition) {
+      try { dictation.recognition.abort(); } catch { /* The page is closing. */ }
+    }
+    saveComposerDraft();
+  });
   $("fileInput")?.addEventListener("change", async (event) => {
     const input = event.currentTarget;
     const selection = ++state.fileSelectionCounter;

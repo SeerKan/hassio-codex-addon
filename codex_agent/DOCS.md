@@ -28,7 +28,7 @@ it into issue trackers, or commit it to git.
 ## Models
 
 Choose **GPT-6 Astra** in the sidebar model dropdown for complex work across
-code and tools. Version 0.1.25 bundles Codex CLI 0.153.4. GPT-5.6 Terra remains
+code and tools. Version 0.1.26 bundles Codex CLI 0.153.4. GPT-5.6 Terra remains
 the default, and existing model preferences are preserved.
 
 Astra availability depends on your signed-in account and OpenAI rollout. See
@@ -133,7 +133,13 @@ still needed to verify its native photo picker and app resume behavior.
 ## Current v1 Boundaries
 
 - HA OS is the target install type.
-- Sidebar UI only; Assist/voice integration is intentionally out of scope.
+- Sidebar UI only; Home Assistant Assist pipeline integration is out of scope.
+  The sidebar composer supports browser voice dictation where the browser exposes
+  speech recognition. Tap **Dictate**, speak, tap **Stop**, review the editable
+  text, then tap **Send**. Choose Browser language, Română, or English. Browsers
+  may use an online recognition service; no audio is uploaded to the add-on.
+  Embedded browsers without working speech recognition can use the keyboard's
+  microphone dictation instead.
 - Secret-file access requires explicit approval.
 - The add-on relies on the Codex CLI contract and may need updates when Codex
   CLI authentication output changes.

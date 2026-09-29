@@ -129,12 +129,22 @@ __MODEL_OPTIONS__
                 rows="5"
                 placeholder="Ask Codex to inspect, propose, or change Home Assistant..."
               ></textarea>
+              <div class="dictation-tools">
+                <label for="dictationLanguage">Dictation language</label>
+                <select id="dictationLanguage" aria-label="Dictation language">
+                  <option value="browser">Browser language</option>
+                  <option value="ro-RO">Română</option>
+                  <option value="en-US">English</option>
+                </select>
+                <span id="dictationStatus" role="status" aria-live="polite"></span>
+              </div>
             </div>
             <div class="composer-actions">
               <label id="attachButton" class="secondary attachment-picker">
                 <span>Attach</span>
                 <input id="fileInput" type="file" multiple aria-label="Attach files" />
               </label>
+              <button id="dictateButton" class="secondary" type="button" aria-pressed="false">Dictate</button>
               <button id="runButton" class="primary" type="submit">Send</button>
             </div>
           </form>

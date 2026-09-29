@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.26
+
+- Add voice dictation to the sidebar composer with browser, Romanian, and English
+  language choices. Transcribed words stay editable and are sent only after Send.
+- Show microphone, recognition, and browser support errors in the composer.
+
 ## 0.1.25
 
 - Add GPT-6 Astra (`gpt-6-astra`) to the model dropdown and fallback choices.

@@ -121,6 +121,105 @@ def test_astra_fallback_selection_survives_reload_and_is_sent(sidebar):
     assert runs[-1]["model"] == "gpt-6-astra"
 
 
+def install_fake_speech_recognition(page):
+    page.add_init_script("""(() => {
+      class FakeRecognition {
+        constructor() { window.mockSpeech = this; }
+        start() { if (!window.fakeSpeechNoStart) this.onstart?.(); }
+        stop() { this.onend?.(); }
+        abort() { this.onend?.(); }
+        emit(results, resultIndex = 0) {
+          this.onresult?.({results: results.map(([transcript, isFinal]) => ({
+            0: {transcript}, isFinal
+          })), resultIndex});
+        }
+        fail(error) { this.onerror?.({error}); this.onend?.(); }
+      }
+      window.SpeechRecognition = FakeRecognition;
+      window.webkitSpeechRecognition = FakeRecognition;
+    })()""")
+    page.reload()
+
+
+def test_dictation_appends_final_words_to_editable_draft_without_sending(sidebar):
+    page, _, runs, _ = sidebar
+    install_fake_speech_recognition(page)
+    page.get_by_label("Dictation language").select_option("ro-RO")
+    page.locator("#prompt").fill("Please")
+    page.get_by_role("button", name="Dictate").click()
+    assert page.evaluate("window.mockSpeech.lang") == "ro-RO"
+    expect(page.get_by_role("button", name="Stop")).to_have_attribute("aria-pressed", "true")
+    expect(page.get_by_label("Dictation language")).to_be_disabled()
+    page.evaluate("window.mockSpeech.emit([['aprinde lumina', false]])")
+    expect(page.locator("#dictationStatus")).to_contain_text("aprinde lumina")
+    expect(page.locator("#prompt")).to_have_value("Please")
+    page.evaluate("window.mockSpeech.emit([['aprinde lumina', true]])")
+    page.evaluate("window.mockSpeech.emit([['aprinde lumina', true], ['în bucătărie', true]], 0)")
+    expect(page.locator("#prompt")).to_have_value("Please aprinde lumina în bucătărie")
+    page.get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator("#dictationStatus")).to_contain_text("Stop dictation")
+    assert runs == []
+    page.get_by_role("button", name="Stop").click()
+    expect(page.locator("#prompt")).to_have_value("Please aprinde lumina în bucătărie")
+    page.reload()
+    expect(page.locator("#prompt")).to_have_value("Please aprinde lumina în bucătărie")
+    expect(page.get_by_label("Dictation language")).to_have_value("ro-RO")
+    with page.expect_response("**/api/runs"):
+        page.get_by_role("button", name="Send", exact=True).click()
+    assert runs[-1]["prompt"] == "Please aprinde lumina în bucătărie"
+
+
+def test_dictation_replaces_selected_draft_text(sidebar):
+    page, _, _, _ = sidebar
+    install_fake_speech_recognition(page)
+    page.locator("#prompt").fill("Please old command now")
+    page.locator("#prompt").evaluate(
+        "element => { element.selectionStart = 7; element.selectionEnd = 18; }"
+    )
+    page.get_by_role("button", name="Dictate").click()
+    page.evaluate("window.mockSpeech.emit([['turn on the lights', true]])")
+    expect(page.locator("#prompt")).to_have_value("Please turn on the lights now")
+    page.get_by_role("button", name="Stop").click()
+    expect(page.get_by_label("Dictation language")).to_be_enabled()
+
+
+def test_dictation_permission_error_is_visible_and_draft_survives(sidebar):
+    page, _, runs, _ = sidebar
+    install_fake_speech_recognition(page)
+    page.locator("#prompt").fill("Existing draft")
+    page.get_by_role("button", name="Dictate").click()
+    page.evaluate("window.mockSpeech.fail('not-allowed')")
+    expect(page.locator("#dictationStatus")).to_contain_text("Microphone access was denied")
+    expect(page.get_by_role("button", name="Dictate")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#prompt")).to_have_value("Existing draft")
+    assert runs == []
+
+
+def test_dictation_unsupported_browser_offers_keyboard_fallback(sidebar):
+    page, _, _, _ = sidebar
+    page.add_init_script("""(() => {
+      window.SpeechRecognition = undefined;
+      window.webkitSpeechRecognition = undefined;
+    })()""")
+    page.reload()
+    expect(page.get_by_role("button", name="Dictate")).to_be_disabled()
+    expect(page.locator("#dictationStatus")).to_contain_text("keyboard's microphone")
+
+
+def test_dictation_start_timeout_recovers_when_embedded_browser_stalls(sidebar):
+    page, _, _, _ = sidebar
+    install_fake_speech_recognition(page)
+    page.evaluate("""() => {
+      window.fakeSpeechNoStart = true;
+      const original = window.setTimeout;
+      window.setTimeout = (callback, delay, ...args) =>
+        original(callback, delay === 10000 ? 30 : delay, ...args);
+    }""")
+    page.get_by_role("button", name="Dictate").click()
+    expect(page.locator("#dictationStatus")).to_contain_text("microphone did not start")
+    expect(page.get_by_role("button", name="Dictate")).to_be_enabled()
+
+
 def pick_photo(page):
     # Exercise the actual tap target; setting input files alone misses picker wiring bugs.
     with page.expect_file_chooser() as chooser:
