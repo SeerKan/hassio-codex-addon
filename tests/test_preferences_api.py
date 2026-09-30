@@ -31,25 +31,31 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     return TestClient(main.app)
 
 
-@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"])
 def test_user_preferences_round_trip(tmp_path, monkeypatch, model) -> None:
     client = make_client(tmp_path, monkeypatch)
 
     initial = client.get("/api/status", headers=HEADERS)
 
     assert initial.status_code == 200
-    assert initial.json()["preferences"] == {"mode": "", "model": "", "persisted": False}
+    assert initial.json()["preferences"] == {
+        "mode": "",
+        "model": "",
+        "reasoning_effort": "medium",
+        "persisted": False,
+    }
 
     saved = client.post(
         "/api/preferences",
         headers=HEADERS,
-        json={"mode": "apply", "model": model},
+        json={"mode": "apply", "model": model, "reasoning_effort": "high"},
     )
 
     assert saved.status_code == 200
     assert saved.json()["preferences"] == {
         "mode": "apply",
         "model": model,
+        "reasoning_effort": "high",
         "persisted": True,
     }
 
@@ -59,7 +65,7 @@ def test_user_preferences_round_trip(tmp_path, monkeypatch, model) -> None:
     assert status.json()["preferences"] == saved.json()["preferences"]
 
 
-@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"])
 def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatch, model) -> None:
     client = make_client(tmp_path, monkeypatch)
 
@@ -80,6 +86,7 @@ def test_run_request_persists_preferences_before_auth_check(tmp_path, monkeypatc
     assert status.json()["preferences"] == {
         "mode": "propose",
         "model": model,
+        "reasoning_effort": "medium",
         "persisted": True,
     }
 
@@ -178,6 +185,7 @@ def test_run_request_passes_converted_attachments_to_runner(tmp_path, monkeypatc
         captured["user"] = user
         captured["prompt"] = prompt
         captured["attachments"] = kwargs["attachments"]
+        captured["reasoning_effort"] = kwargs["reasoning_effort"]
         return "run-1"
 
     monkeypatch.setattr(main.runner, "start_run", fake_start_run)
@@ -202,11 +210,110 @@ def test_run_request_passes_converted_attachments_to_runner(tmp_path, monkeypatc
             "prompt": "Read the attachment.",
             "mode": "ask",
             "model": "gpt-5.5",
+            "reasoning_effort": "xhigh",
             "attachment_ids": ["attachment-1"],
         },
     )
 
     assert response.status_code == 200
     assert captured["prompt"] == "Read the attachment."
+    assert captured["reasoning_effort"] == "xhigh"
     assert captured["attachments"][0]["filename"] == "dashboard.pdf"
     assert captured["attachments"][0]["markdown"] == "# Dashboard\n\nlight.kitchen"
+
+
+@pytest.mark.parametrize("endpoint", ["/api/preferences", "/api/runs"])
+@pytest.mark.parametrize(
+    "model,effort,status",
+    [
+        ("gpt-6.1-sol", "ultra", 200),
+        ("gpt-6-luna", "max", 200),
+        ("gpt-6-luna", "ultra", 400),
+        ("gpt-5.5", "max", 400),
+        ("gpt-6-sol", "invalid", 422),
+    ],
+)
+def test_reasoning_intensity_validated_for_model(
+    tmp_path,
+    monkeypatch,
+    endpoint,
+    model,
+    effort,
+    status,
+) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    body = {"model": model, "reasoning_effort": effort, "prompt": "Inspect entities"}
+    response = client.post(endpoint, headers=HEADERS, json=body)
+    expected = 401 if endpoint == "/api/runs" and status == 200 else status
+    assert response.status_code == expected
+
+
+def test_old_preferences_default_to_medium_and_migrate_retired_models(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    from codex_agent import main
+
+    main.db.set_state("user_preferences:user-1", {"mode": "ask", "model": "gpt-5.4-mini"})
+    preferences = client.get("/api/status", headers=HEADERS).json()["preferences"]
+    assert preferences["model"] == "gpt-6-luna"
+    assert preferences["reasoning_effort"] == "medium"
+
+
+def test_model_switch_resets_unsupported_intensity_and_preserves_user_scope(tmp_path, monkeypatch):
+    client = make_client(tmp_path, monkeypatch)
+    saved = client.post(
+        "/api/preferences",
+        headers=HEADERS,
+        json={
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": "ultra",
+        },
+    )
+    assert saved.status_code == 200
+    other_headers = {**HEADERS, "X-Remote-User-Id": "user-2"}
+    other = client.get("/api/status", headers=other_headers).json()["preferences"]
+    assert other["reasoning_effort"] == "medium"
+    assert other["persisted"] is False
+    switched = client.post("/api/preferences", headers=HEADERS, json={"model": "gpt-6-luna"})
+    assert switched.status_code == 200
+    assert switched.json()["preferences"]["reasoning_effort"] == "medium"
+
+
+def test_approval_replay_runs_original_intensity_without_replacing_new_preferences(
+    tmp_path,
+    monkeypatch,
+):
+    client = make_client(tmp_path, monkeypatch)
+    from codex_agent import main
+
+    client.post(
+        "/api/preferences",
+        headers=HEADERS,
+        json={
+            "model": "gpt-6-luna",
+            "reasoning_effort": "low",
+        },
+    )
+    monkeypatch.setattr(main.runner, "auth_status", lambda _user: {"configured": True})
+    captured = {}
+
+    async def start_run(*args, **kwargs):
+        captured["model"] = args[3]
+        captured["effort"] = kwargs["reasoning_effort"]
+        return "approved-run"
+
+    monkeypatch.setattr(main.runner, "start_run", start_run)
+    response = client.post(
+        "/api/runs",
+        headers=HEADERS,
+        json={
+            "prompt": "Inspect entities",
+            "model": "gpt-6.1-sol",
+            "reasoning_effort": "high",
+            "approved": True,
+        },
+    )
+    assert response.status_code == 200
+    assert captured == {"model": "gpt-6.1-sol", "effort": "high"}
+    preferences = client.get("/api/status", headers=HEADERS).json()["preferences"]
+    assert preferences["model"] == "gpt-6-luna"
+    assert preferences["reasoning_effort"] == "low"

@@ -1,60 +1,126 @@
 const SESSION_STORAGE_KEY = "codex_session_id";
 const DRAFT_SESSION_ID = "__new_session__";
-const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.26";
+const APP_VERSION = window.CODEX_AGENT_VERSION || "0.1.27";
 const MODE_STORAGE_KEY = "codex_mode";
 const MODEL_STORAGE_KEY = "codex_model";
+const REASONING_STORAGE_KEY = "codex_reasoning_effort";
+const REASONING_LABELS = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 const DICTATION_LANGUAGE_KEY = "codex_dictation_language";
 const MAX_ATTACHMENT_LABEL = 42;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENTS = 8;
 const UPLOAD_TIMEOUT_MS = 120_000;
 const memoryStore = {};
+let preferenceWriteQueue = Promise.resolve();
 const FALLBACK_MODEL_OPTIONS = [
   {
-    id: "gpt-6-astra",
-    label: "GPT-6 Astra",
-    description: "Most capable model for complex Home Assistant work across code and tools.",
+    "id": "gpt-6.1-sol",
+    "label": "GPT-6.1 Sol",
+    "description": "Latest Sol model for complex coding and sustained work at lower cost than Astra.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ]
   },
   {
-    id: "gpt-5.6-sol",
-    label: "GPT-5.6 Sol",
-    description: "Most capable GPT-5.6 option for complex Home Assistant coding and reasoning work.",
+    "id": "gpt-6-astra",
+    "label": "GPT-6 Astra",
+    "description": "Most capable model for complex Home Assistant work across code and tools.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ]
   },
   {
-    id: "gpt-5.6-terra",
-    label: "GPT-5.6 Terra",
-    description: "Balanced GPT-5.6 option for everyday Codex work across capability, speed, and cost.",
+    "id": "gpt-6-sol",
+    "label": "GPT-6 Sol",
+    "description": "GPT-6 model for complex coding and agentic workflows.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ]
   },
   {
-    id: "gpt-5.6-luna",
-    label: "GPT-5.6 Luna",
-    description: "Fastest GPT-5.6 option for quick inspections and cost-sensitive tasks.",
+    "id": "gpt-6-luna",
+    "label": "GPT-6 Luna",
+    "description": "Efficient GPT-6 model for focused coding and high-volume tasks.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
-    id: "gpt-5.5",
-    label: "GPT-5.5",
-    description: "Previous-generation model for complex Home Assistant work.",
+    "id": "gpt-5.6-sol",
+    "label": "GPT-5.6 Sol",
+    "description": "Previous Sol model for complex Home Assistant coding and reasoning work.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ]
   },
   {
-    id: "gpt-5.4",
-    label: "GPT-5.4",
-    description: "Flagship model for professional coding, reasoning, and tool use.",
+    "id": "gpt-5.6-terra",
+    "label": "GPT-5.6 Terra",
+    "description": "Balanced GPT-5.6 option for everyday work across capability, speed, and cost.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ]
   },
   {
-    id: "gpt-5.4-mini",
-    label: "GPT-5.4 Mini",
-    description: "Faster option for lighter coding tasks and quick inspections.",
+    "id": "gpt-5.6-luna",
+    "label": "GPT-5.6 Luna",
+    "description": "Efficient GPT-5.6 option for focused coding tasks.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   },
   {
-    id: "gpt-5.3-codex-spark",
-    label: "GPT-5.3 Codex Spark",
-    description: "Fast research-preview coding iteration model for eligible Pro users.",
-  },
+    "id": "gpt-5.5",
+    "label": "GPT-5.5",
+    "description": "Previous-generation model; retires from Codex on October 14, 2026.",
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ]
+  }
 ];
 
 const state = {
   mode: loadStoredChoice(MODE_STORAGE_KEY, "ask"),
-  selectedModel: loadStoredChoice(MODEL_STORAGE_KEY, ""),
+  selectedModel: normalizeModelChoice(loadStoredChoice(MODEL_STORAGE_KEY, "")),
+  selectedReasoningEffort: "medium",
+  reasoningStorageKey: null,
+  reasoningUserChanged: false,
   modelOptions: [],
   activeSessionId: null,
   draftSession: false,
@@ -203,10 +269,22 @@ function isValidMode(mode) {
   return ["ask", "propose", "apply"].includes(mode);
 }
 
+function queuePreferenceWrite(write) {
+  const pending = preferenceWriteQueue.then(write);
+  preferenceWriteQueue = pending.catch(() => {});
+  return pending;
+}
+
 function savePreferences(preferences) {
-  api("api/preferences", {
-    method: "POST",
-    body: JSON.stringify(preferences),
+  const body = JSON.stringify(preferences);
+  queuePreferenceWrite(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      return await api("api/preferences", { method: "POST", body, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
   }).catch(() => {
     // Local storage keeps the UI stable if the sidebar is briefly offline.
   });
@@ -226,6 +304,12 @@ function resolveSessionId(payload) {
 
 async function renderStatus(payload, { loadConversation = true } = {}) {
   restoreComposerDraft(payload.user.id);
+  if (!state.reasoningStorageKey) {
+    state.reasoningStorageKey = `${REASONING_STORAGE_KEY}:${payload.user.id}`;
+    if (!state.reasoningUserChanged) {
+      state.selectedReasoningEffort = loadStoredChoice(state.reasoningStorageKey, "medium");
+    }
+  }
   setText("userName", payload.user.display_name || payload.user.username);
   if (payload.auth.configured) {
     setText("authState", payload.auth.auth_mode || "Codex");
@@ -250,8 +334,11 @@ async function renderStatus(payload, { loadConversation = true } = {}) {
     setMode(state.mode);
   }
   if (!state.modelUserChanged && preferences.persisted && preferences.model) {
-    state.selectedModel = preferences.model;
+    state.selectedModel = normalizeModelChoice(preferences.model);
     storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
+  }
+  if (!state.reasoningUserChanged && preferences.reasoning_effort) {
+    state.selectedReasoningEffort = preferences.reasoning_effort;
   }
   renderModelOptions(payload.models || {});
 
@@ -327,6 +414,29 @@ function renderModelOptions(models) {
   select.disabled = options.length === 0;
   select.value = state.selectedModel;
   select.title = options.find((model) => model.id === state.selectedModel)?.description || "";
+  renderReasoningOptions();
+}
+
+function normalizeModelChoice(model) {
+  return { "gpt-5.4": "gpt-6-sol", "gpt-5.4-mini": "gpt-6-luna", "gpt-5.3-codex-spark": "gpt-6-luna" }[model] || model;
+}
+
+function renderReasoningOptions() {
+  const select = $("reasoningSelect");
+  if (!select) return;
+  const model = state.modelOptions.find((option) => option.id === state.selectedModel)
+    || FALLBACK_MODEL_OPTIONS.find((option) => option.id === state.selectedModel);
+  const efforts = model?.reasoning_efforts || ["low", "medium", "high", "xhigh"];
+  if (!efforts.includes(state.selectedReasoningEffort)) state.selectedReasoningEffort = "medium";
+  select.innerHTML = "";
+  for (const effort of efforts) {
+    const option = document.createElement("option");
+    option.value = effort;
+    option.textContent = REASONING_LABELS[effort] || effort;
+    select.appendChild(option);
+  }
+  select.value = state.selectedReasoningEffort;
+  if (state.reasoningStorageKey) storeChoice(state.reasoningStorageKey, state.selectedReasoningEffort);
 }
 
 function escapeHtml(value) {
@@ -1539,6 +1649,7 @@ async function submitRun(approved = false) {
       prompt: promptBox.value.trim(),
       mode: state.mode,
       model: state.selectedModel,
+      reasoning_effort: state.selectedReasoningEffort,
       approved,
       yolo: Boolean($("yolo")?.checked),
       secret_access_approved: Boolean($("secretApproved")?.checked),
@@ -1562,11 +1673,13 @@ async function submitRun(approved = false) {
   state.lastEventId = 0;
   setRunButtonBusy(true, "Starting...");
   startRunFeedback("Starting", "Creating the session and sending your message.");
-  await nextPaint();
   try {
-    const payload = await api("api/runs", {
-      method: "POST",
-      body: JSON.stringify(body),
+    const payload = await queuePreferenceWrite(async () => {
+      await nextPaint();
+      return api("api/runs", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
     });
     state.pendingApproval = null;
     state.lastEventId = 0;
@@ -1858,10 +1971,19 @@ function bind() {
   $("modelSelect")?.addEventListener("change", (event) => {
     state.selectedModel = event.target.value;
     state.modelUserChanged = true;
+    state.reasoningUserChanged = true;
     storeChoice(MODEL_STORAGE_KEY, state.selectedModel);
-    savePreferences({ model: state.selectedModel });
+    renderReasoningOptions();
+    savePreferences({ model: state.selectedModel, reasoning_effort: state.selectedReasoningEffort });
     const selected = state.modelOptions.find((model) => model.id === state.selectedModel);
     event.target.title = selected?.description || "";
+  });
+
+  $("reasoningSelect")?.addEventListener("change", (event) => {
+    state.selectedReasoningEffort = event.target.value;
+    state.reasoningUserChanged = true;
+    if (state.reasoningStorageKey) storeChoice(state.reasoningStorageKey, state.selectedReasoningEffort);
+    savePreferences({ model: state.selectedModel, reasoning_effort: state.selectedReasoningEffort });
   });
 
   $("prompt")?.addEventListener("keydown", handlePromptKeydown);

@@ -13,6 +13,12 @@ from typing import Any
 
 from .database import Database, utcnow
 from .ha_client import HomeAssistantClient, supervisor_token
+from .models import (
+    DEFAULT_CODEX_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    normalize_model,
+    reasoning_efforts_for_model,
+)
 from .security import RiskAssessment, UserContext
 from .settings import DATA_DIR, Settings
 from .snapshot import collect_snapshot, diff_snapshots
@@ -293,6 +299,7 @@ class CodexRunner:
         yolo: bool,
         secret_access_approved: bool,
         attachments: list[dict[str, Any]] | None = None,
+        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     ) -> str:
         if shutil.which("codex") is None:
             raise RuntimeError("codex CLI is not installed in this image.")
@@ -374,6 +381,7 @@ class CodexRunner:
                 yolo,
                 secret_access_approved,
                 attachments or [],
+                reasoning_effort,
             ),
             name=f"codex-run-{run_id}",
             daemon=True,
@@ -414,6 +422,7 @@ class CodexRunner:
         yolo: bool,
         secret_access_approved: bool,
         attachments: list[dict[str, Any]],
+        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     ) -> None:
         self.db.update_run(run_id, status="running")
         before = None
@@ -427,6 +436,7 @@ class CodexRunner:
             yolo=yolo,
             workspace=workspace,
             image_paths=self._attachment_image_paths(attachments),
+            reasoning_effort=reasoning_effort,
         )
         full_prompt = self._build_prompt(
             user=user,
@@ -513,11 +523,14 @@ class CodexRunner:
         yolo: bool,
         workspace: Path | None = None,
         image_paths: list[Path] | None = None,
+        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     ) -> list[str]:
         command = ["codex", "exec", "--json", "--skip-git-repo-check"]
-        selected_model = model or self.settings.codex_model
-        if selected_model:
-            command.extend(["--model", selected_model])
+        selected_model = normalize_model(model or self.settings.codex_model) or DEFAULT_CODEX_MODEL
+        if reasoning_effort not in reasoning_efforts_for_model(selected_model):
+            raise ValueError("Unsupported thinking intensity for this model.")
+        command.extend(["--model", selected_model])
+        command.extend(["--config", f'model_reasoning_effort="{reasoning_effort}"'])
         if self.settings.enable_live_search:
             command.extend(["--config", 'web_search="live"'])
         command.extend(["--config", 'shell_environment_policy.inherit="all"'])

@@ -162,6 +162,8 @@ def smoke_test() -> None:
     assert 'id="dictateButton"' in html
     assert 'id="dictationLanguage"' in html
     assert 'id="dictationStatus"' in html
+    assert 'id="reasoningSelect"' in html
+    assert 'value="gpt-6.1-sol"' in html
     print(f"Smoke checks passed for add-on {status['app_version']}.")
 
 

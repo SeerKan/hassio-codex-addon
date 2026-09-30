@@ -27,13 +27,30 @@ it into issue trackers, or commit it to git.
 
 ## Models
 
-Choose **GPT-6 Astra** in the sidebar model dropdown for complex work across
-code and tools. Version 0.1.26 bundles Codex CLI 0.153.4. GPT-5.6 Terra remains
-the default, and existing model preferences are preserved.
+The sidebar includes **GPT-6.1 Sol**, **GPT-6 Astra**, **GPT-6 Sol**, and
+**GPT-6 Luna**, plus the supported GPT-5.6 models and GPT-5.5. Version 0.1.27
+bundles Codex CLI 0.159.2. GPT-5.6 Terra remains the default, and supported
+model preferences are preserved.
 
-Astra availability depends on your signed-in account and OpenAI rollout. See
-the [official Codex model documentation](https://developers.openai.com/codex/models#gpt-6-astra)
+Retired GPT-5.4 selections migrate to GPT-6 Sol; GPT-5.4 Mini and Codex Spark
+selections migrate to GPT-6 Luna. GPT-5.5 retires from Codex with ChatGPT sign-in
+on October 14, 2026.
+
+Model availability depends on the signed-in account and workspace rollout. See
+the [official Codex model documentation](https://learn.chatgpt.com/docs/models)
 for access details.
+
+### Thinking intensity
+
+Choose **Thinking** beside the model selector. It defaults to **Medium** and is
+saved per Home Assistant user. Higher levels take longer and use more tokens.
+The picker shows Low, Medium, High, Extra high, Max, and Ultra where supported.
+Luna models omit Ultra, and GPT-5.5 stops at Extra high. Switching to a model
+that does not support the current intensity resets it to Medium.
+
+Every message passes the selected intensity to Codex as `model_reasoning_effort`,
+including messages queued for approval. Existing users without a saved intensity
+also start at Medium.
 
 ## Home Assistant Access
 

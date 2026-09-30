@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.27
+
+- Add GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna and update Codex CLI to 0.159.2.
+- Add per-user thinking intensity selection, defaulting to Medium, and pass it
+  to every Codex run. Show only the levels supported by the selected model.
+- Migrate retired GPT-5.4, GPT-5.4 Mini, and Codex Spark selections to current
+  GPT-6 alternatives; keep existing supported model preferences.
+
 ## 0.1.26
 
 - Add voice dictation to the sidebar composer with browser, Romanian, and English

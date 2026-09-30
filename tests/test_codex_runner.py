@@ -53,7 +53,8 @@ def test_ask_command_uses_supported_exec_flags() -> None:
     assert "--search" not in command
     assert "--ask-for-approval" not in command
     assert command[-2:] == ["--sandbox", "danger-full-access"]
-    assert command[command.index("--config") + 1] == 'web_search="live"'
+    assert 'web_search="live"' in command
+    assert 'model_reasoning_effort="medium"' in command
     assert 'shell_environment_policy.inherit="all"' in command
     assert command[command.index("--cd") + 1] == "/homeassistant"
 
@@ -91,7 +92,7 @@ def test_live_search_can_be_left_as_default() -> None:
     assert 'web_search="live"' not in command
 
 
-@pytest.mark.parametrize("model", ["gpt-5.4-mini", "gpt-6-astra"])
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"])
 def test_selected_model_is_passed_to_codex_exec(model) -> None:
     command = make_runner()._build_command(
         mode="ask",
@@ -225,19 +226,13 @@ def test_prompt_includes_markitdown_attachment_context() -> None:
                 "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "size_bytes": 1234,
                 "markdown": (
-                    "# Inventory\n\n"
-                    "| Entity | Room |\n"
-                    "| --- | --- |\n"
-                    "| light.kitchen | Kitchen |"
+                    "# Inventory\n\n| Entity | Room |\n| --- | --- |\n| light.kitchen | Kitchen |"
                 ),
             }
         ],
     )
 
-    assert (
-        "User-provided attachments for this request:"
-        in prompt
-    )
+    assert "User-provided attachments for this request:" in prompt
     assert "### Attachment 1: inventory.xlsx" in prompt
     assert "- kind: MarkItDown markdown" in prompt
     assert "| light.kitchen | Kitchen |" in prompt
@@ -455,8 +450,7 @@ def test_list_runs_can_return_session_conversation_order(tmp_path, monkeypatch) 
         )
 
     prompts = [
-        run["prompt"]
-        for run in db.list_runs(user.user_id, session_id=session_id, order="asc")
+        run["prompt"] for run in db.list_runs(user.user_id, session_id=session_id, order="asc")
     ]
 
     assert prompts == ["First message", "Second message"]
@@ -624,3 +618,25 @@ def test_local_context_includes_dashboard_files(tmp_path, monkeypatch) -> None:
             "content": '{"views":[]}',
         }
     ]
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max", "ultra"])
+@pytest.mark.parametrize("yolo", [False, True])
+def test_reasoning_intensity_is_passed_to_codex_exec(effort, yolo):
+    command = make_runner()._build_command(
+        mode="ask",
+        model="gpt-6.1-sol",
+        reasoning_effort=effort,
+        yolo=yolo,
+    )
+    assert f'model_reasoning_effort="{effort}"' in command
+
+
+def test_runner_rejects_unsupported_model_intensity():
+    with pytest.raises(ValueError, match="Unsupported thinking intensity"):
+        make_runner()._build_command(
+            mode="ask",
+            model="gpt-6-luna",
+            reasoning_effort="ultra",
+            yolo=False,
+        )

@@ -30,10 +30,10 @@ def test_sidebar_has_ingress_base_and_model_fallbacks() -> None:
     assert "document.baseURI" in app
 
 
-def test_sidebar_ships_codex_cli_version_for_astra() -> None:
+def test_sidebar_ships_current_codex_cli_version() -> None:
     dockerfile = (ROOT / "codex_agent/Dockerfile").read_text(encoding="utf-8")
 
-    assert "ARG CODEX_CLI_VERSION=0.153.4" in dockerfile
+    assert "ARG CODEX_CLI_VERSION=0.159.2" in dockerfile
 
 
 def test_sidebar_presents_sessions_instead_of_recent_runs() -> None:

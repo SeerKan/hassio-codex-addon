@@ -33,6 +33,7 @@ def sidebar(browser):
     uploads = []
     runs = []
     behavior = {"upload": "ok"}
+    preferences = {}
     html = (STATIC / "index.html").read_text()
     html = html.replace("__APP_VERSION__", "test").replace("__MODEL_OPTIONS__", "")
     html = html.replace("__APP_STYLES__", (STATIC / "styles.css").read_text())
@@ -59,6 +60,7 @@ def sidebar(browser):
                     "user": {"id": "mobile-test", "username": "test"},
                     "auth": {"configured": True}, "settings": {}, "home_assistant": {},
                     "sessions": [], "runs": [],
+                    "preferences": preferences,
                 })
             else:
                 self.respond({})
@@ -87,8 +89,18 @@ def sidebar(browser):
                         "kind": "image", "size_bytes": len(uploaded["bytes"]),
                     }})
             elif path == "api/runs":
-                runs.append(json.loads(body))
+                run = json.loads(body)
+                runs.append(run)
+                if not run["approved"]:
+                    preferences.update({
+                        key: run[key] for key in ("mode", "model", "reasoning_effort")
+                    })
+                    preferences["persisted"] = True
                 self.respond({"detail": "Test stops before running Codex"}, status=401)
+            elif path == "api/preferences":
+                preferences.update(json.loads(body))
+                preferences["persisted"] = True
+                self.respond({"preferences": preferences})
             else:
                 self.respond({})
 
@@ -353,3 +365,110 @@ def test_removed_inflight_upload_does_not_reappear(sidebar):
     page.wait_for_function("typeof window.finishUpload === 'function'")
     page.evaluate("window.finishUpload()")
     expect(page.locator(".attachment-ready")).to_have_count(1)
+
+
+def test_latest_model_and_intensity_persist_on_server_and_are_sent(sidebar):
+    page, _, runs, _ = sidebar
+    model = page.get_by_role('combobox', name='Codex model')
+    intensity = page.get_by_role('combobox', name='Thinking intensity')
+    expect(intensity).to_have_value('medium')
+    model.select_option('gpt-6.1-sol')
+    with page.expect_response('**/api/preferences'):
+        intensity.select_option('ultra')
+    # Clear browser choices to prove that per-user server preferences restore them.
+    page.evaluate('() => { sessionStorage.clear(); localStorage.clear(); }')
+    page.reload()
+    expect(model).to_have_value('gpt-6.1-sol')
+    expect(intensity).to_have_value('ultra')
+    page.locator('#prompt').fill('Inspect the dashboard')
+    with page.expect_response('**/api/runs'):
+        page.get_by_role('button', name='Send', exact=True).click()
+    assert runs[-1]['model'] == 'gpt-6.1-sol'
+    assert runs[-1]['reasoning_effort'] == 'ultra'
+    model.select_option('gpt-6-luna')
+    expect(intensity).to_have_value('medium')
+    expect(intensity.locator('option[value=ultra]')).to_have_count(0)
+    intensity.select_option('max')
+    expect(intensity).to_have_value('max')
+    model.select_option('gpt-5.5')
+    expect(intensity).to_have_value('medium')
+    expect(intensity.locator('option[value=max]')).to_have_count(0)
+    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+
+
+def test_approval_retry_preserves_original_model_and_intensity(sidebar):
+    page, _, _, _ = sidebar
+    requests = []
+
+    def respond(route):
+        body = route.request.post_data_json
+        requests.append(body)
+        if not body['approved']:
+            route.fulfill(status=409, json={'detail': {'assessment': {
+                'warning': 'Review changes', 'reasons': ['Test approval'],
+            }}})
+        else:
+            route.fulfill(status=401, json={'detail': 'Test stops before running Codex'})
+
+    page.route('**/api/runs', respond)
+    page.get_by_role('combobox', name='Codex model').select_option('gpt-6.1-sol')
+    page.get_by_role('combobox', name='Thinking intensity').select_option('high')
+    page.locator('#prompt').fill('Change the dashboard')
+    page.get_by_role('button', name='Send', exact=True).click()
+    expect(page.get_by_role('button', name='Approve and send')).to_be_visible()
+    page.get_by_role('combobox', name='Thinking intensity').select_option('low')
+    page.get_by_role('button', name='Approve and send').click()
+    expect(page.locator('#runState')).to_have_text('Request failed')
+    assert len(requests) == 2
+    assert requests[1]['approved'] is True
+    assert requests[1]['model'] == 'gpt-6.1-sol'
+    assert requests[1]['reasoning_effort'] == 'high'
+
+
+def test_new_user_does_not_inherit_another_users_intensity(sidebar):
+    page, _, _, _ = sidebar
+    page.evaluate("""() => {
+      localStorage.setItem('codex_reasoning_effort:another-user', 'ultra');
+      localStorage.setItem('codex_reasoning_effort', 'ultra');
+    }""")
+    page.reload()
+    expect(page.get_by_role('combobox', name='Thinking intensity')).to_have_value('medium')
+
+
+def test_delayed_preference_save_cannot_overwrite_newer_selection_or_send(sidebar):
+    page, _, runs, _ = sidebar
+    page.evaluate("""() => {
+      const originalFetch = window.fetch;
+      window.preferenceRequestCount = 0;
+      window.fetch = (url, options) => {
+        if (options?.method === 'POST' && String(url).endsWith('/api/preferences')) {
+          window.preferenceRequestCount += 1;
+          if (window.preferenceRequestCount === 1) {
+            return new Promise((resolve, reject) => {
+              window.finishPreference = () => originalFetch(url, options).then(resolve, reject);
+            });
+          }
+        }
+        return originalFetch(url, options);
+      };
+    }""")
+    model = page.get_by_role('combobox', name='Codex model')
+    intensity = page.get_by_role('combobox', name='Thinking intensity')
+    model.select_option('gpt-6.1-sol')
+    page.wait_for_function("typeof window.finishPreference === 'function'")
+    intensity.select_option('high')
+    page.locator('#prompt').fill('Inspect entities')
+    page.get_by_role('button', name='Send', exact=True).click()
+    intensity.select_option('low')
+    assert page.evaluate('window.preferenceRequestCount') == 1
+    assert runs == []
+    with page.expect_response(lambda response: (
+        response.url.endswith('/api/preferences')
+        and response.request.post_data_json.get('reasoning_effort') == 'low'
+    )):
+        page.evaluate('window.finishPreference()')
+    assert runs[-1]['reasoning_effort'] == 'high'
+    page.evaluate('() => { sessionStorage.clear(); localStorage.clear(); }')
+    page.reload()
+    expect(model).to_have_value('gpt-6.1-sol')
+    expect(intensity).to_have_value('low')

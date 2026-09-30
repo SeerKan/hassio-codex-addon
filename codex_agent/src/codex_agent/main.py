@@ -19,7 +19,15 @@ from . import __version__
 from .codex_runner import CodexRunner
 from .database import Database, utcnow
 from .event_view import display_events
-from .models import CODEX_MODEL_IDS, CODEX_MODEL_OPTIONS, DEFAULT_CODEX_MODEL, normalize_model
+from .models import (
+    CODEX_MODEL_IDS,
+    CODEX_MODEL_OPTIONS,
+    DEFAULT_CODEX_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    ReasoningEffort,
+    normalize_model,
+    reasoning_efforts_for_model,
+)
 from .security import UserContext, classify_prompt, user_from_request
 from .settings import DATA_DIR, load_settings
 
@@ -95,13 +103,15 @@ def _is_html_request(request: Request) -> bool:
 
 
 def _default_model() -> str:
-    return settings.codex_model if settings.codex_model in CODEX_MODEL_IDS else DEFAULT_CODEX_MODEL
+    model = normalize_model(settings.codex_model)
+    return model if model in CODEX_MODEL_IDS else DEFAULT_CODEX_MODEL
 
 
 class RunRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=20_000)
     mode: Literal["ask", "propose", "apply"] = "ask"
     model: str | None = Field(default=None, max_length=80)
+    reasoning_effort: ReasoningEffort = DEFAULT_REASONING_EFFORT
     approved: bool = False
     yolo: bool = False
     secret_access_approved: bool = False
@@ -117,6 +127,7 @@ class ImportAuthRequest(BaseModel):
 class PreferencesRequest(BaseModel):
     mode: Literal["ask", "propose", "apply"] | None = None
     model: str | None = Field(default=None, max_length=80)
+    reasoning_effort: ReasoningEffort | None = None
 
 
 class SessionCreateRequest(BaseModel):
@@ -166,9 +177,13 @@ def _user_preferences(user: UserContext) -> dict[str, str | bool]:
     model = normalize_model(raw.get("model")) or ""
     if model not in CODEX_MODEL_IDS:
         model = ""
+    effort = raw.get("reasoning_effort", DEFAULT_REASONING_EFFORT)
+    if effort not in reasoning_efforts_for_model(model or _default_model()):
+        effort = DEFAULT_REASONING_EFFORT
     return {
         "mode": mode,
         "model": model,
+        "reasoning_effort": effort,
         "persisted": bool(raw),
     }
 
@@ -178,6 +193,7 @@ def _save_user_preferences(
     *,
     mode: str | None = None,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict[str, str | bool]:
     preferences = _user_preferences(user)
     if mode is not None:
@@ -192,6 +208,15 @@ def _save_user_preferences(
                 detail=f"Unsupported Codex model: {normalized_model}",
             )
         preferences["model"] = normalized_model
+    supported = reasoning_efforts_for_model(preferences["model"] or _default_model())
+    if reasoning_effort is not None:
+        if reasoning_effort not in supported:
+            raise HTTPException(
+                status_code=400, detail="Unsupported thinking intensity for this model."
+            )
+        preferences["reasoning_effort"] = reasoning_effort
+    elif preferences["reasoning_effort"] not in supported:
+        preferences["reasoning_effort"] = DEFAULT_REASONING_EFFORT
     db.set_state(_preferences_key(user), preferences)
     return _user_preferences(user)
 
@@ -358,7 +383,9 @@ async def status(user: UserDep) -> dict:
 
 @app.post("/api/preferences")
 async def save_preferences(payload: PreferencesRequest, user: UserDep) -> dict:
-    preferences = _save_user_preferences(user, mode=payload.mode, model=payload.model)
+    preferences = _save_user_preferences(
+        user, mode=payload.mode, model=payload.model, reasoning_effort=payload.reasoning_effort
+    )
     return {"preferences": preferences}
 
 
@@ -473,7 +500,15 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
     selected_model = normalize_model(payload.model) or _default_model()
     if selected_model not in CODEX_MODEL_IDS:
         raise HTTPException(status_code=400, detail=f"Unsupported Codex model: {selected_model}")
-    _save_user_preferences(user, mode=payload.mode, model=selected_model)
+    if payload.reasoning_effort not in reasoning_efforts_for_model(selected_model):
+        raise HTTPException(
+            status_code=400, detail="Unsupported thinking intensity for this model."
+        )
+    # Approval replays the original run settings, which may differ from the user's new selection.
+    if not payload.approved:
+        _save_user_preferences(
+            user, mode=payload.mode, model=selected_model, reasoning_effort=payload.reasoning_effort
+        )
 
     auth = runner.auth_status(user)
     if not auth.get("configured"):
@@ -516,6 +551,7 @@ async def create_run(payload: RunRequest, user: UserDep) -> dict:
             yolo=payload.yolo,
             secret_access_approved=payload.secret_access_approved,
             attachments=attachments,
+            reasoning_effort=payload.reasoning_effort,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
